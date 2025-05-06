@@ -1,10 +1,7 @@
 import time
 from copy import deepcopy
+from Sequence.sequence_utils import *
 
-from agents.t_052.example_bfs import THINKTIME
-
-EMPTY = '_'
-JOKER = 'X'
 THINKTIME = 0.99
 
 def simulate_action_on_board(chips, action, player_colour):
@@ -94,9 +91,14 @@ class myAgent:
         future_potential = 0
         if draft_card:
             valid = self.get_valid_positions(draft_card, next_chips, opp)
-            future_potential = len(valid)
+            # future_potential = len(valid)
+            for each in valid:
+                next_action = {'play_card':draft_card, 'draft_card':None, 'type':'place', 'coords':each}
+                my_chips = simulate_action_on_board(next_chips, next_action, clr)
+                op_chips =simulate_action_on_board(next_chips, next_action, opp)
+                future_potential = max(future_potential, self.evaluate(my_chips, clr, sclr, opp, opp_s) - self.evaluate(op_chips, opp, opp_s, clr, sclr))
 
-        return delta_score + 1.5 * future_potential
+        return delta_score + 0.9 * future_potential
 
     def evaluate(self, chips, clr, sclr, opp, opp_s):
         jokers = {(0, 0), (0, 9), (9, 0), (9, 9)}
