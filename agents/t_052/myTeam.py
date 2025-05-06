@@ -1,7 +1,7 @@
 import time
 from copy import deepcopy
 from Sequence.sequence_utils import *
-THINKTIME = 0.95
+THINKTIME = 0.98
 
 def simulate_action_on_board(chips, action, player_colour):
     new_chips = deepcopy(chips)
@@ -88,7 +88,7 @@ class myAgent:
             next_chips = simulate_action_on_board(chips, action, clr)
             my_score = self.evaluate(next_chips, clr, sclr, opp, opp_s)
             opp_score = self.evaluate(next_chips, opp, opp_s, clr, sclr)
-            delta_score = my_score - 0.9 * opp_score
+            delta_score = my_score - 0.8 * opp_score
             if my_score >= 9999:
                 return float('inf')
 
@@ -103,12 +103,8 @@ class myAgent:
                 for each in valid:
                     next_action = {'play_card': draft_card, 'draft_card': None, 'type': 'place', 'coords': each}
                     my_chips = simulate_action_on_board(next_chips, next_action, clr)
-                    op_chips = simulate_action_on_board(next_chips, next_action, opp)
-                    future_potential = max(future_potential,
-                                           self.evaluate(my_chips, clr, sclr, opp, opp_s) - 0.9 * self.evaluate(op_chips,
-                                                                                                                opp, opp_s,
-                                                                                                                clr, sclr))
-        return delta_score + 0.81 * future_potential
+                    future_potential = max(future_potential, self.evaluate(my_chips, clr, sclr, opp, opp_s))
+        return delta_score + 0.5 * future_potential
 
     def evaluate(self, chips, clr, sclr, opp, opp_s):
         jokers = {(0, 0), (0, 9), (9, 0), (9, 9)}
