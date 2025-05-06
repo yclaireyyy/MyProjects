@@ -4,7 +4,6 @@ from Sequence.sequence_utils import *
 
 THINKTIME = 0.95
 
-
 def simulate_action_on_board(chips, action, player_colour):
     new_chips = deepcopy(chips)
     r, c = action['coords']
