@@ -44,34 +44,28 @@ class myAgent:
         best_score = float('-inf')
         best_action = None
         for action in actions:
-            score = self.evaluate_action_value(action, chips, clr, sclr, opp, opp_s)
+            score = self.evaluate_action_value(action, game_state, clr, sclr, opp, opp_s)
             if score > best_score:
                 best_score = score
                 best_action = action
         return best_action
 
-    def evaluate_action_value(self, action, chips, clr, sclr, opp, opp_s):
+    def evaluate_action_value(self, action, game_state, clr, sclr, opp, opp_s):
+        chips = game_state.board.chips
         draft_card = action.get("draft_card")
 
-        if action.get("type") == "trade":
-            # 不模拟落子，直接评估未来潜力
-            next_chips = chips
-            delta_score = 0
-        else:
-            # 模拟落子
-            next_chips = simulate_action_on_board(chips, action, clr)
-            my_score = self.evaluate(next_chips, clr, sclr, opp, opp_s)
-            opp_score = self.evaluate(next_chips, opp, opp_s, clr, sclr)
-            delta_score = my_score - opp_score
-            if my_score >= 9999:
-                return float('inf')
+        next_chips = simulate_action_on_board(chips, action, clr)
+        my_score = self.evaluate(next_chips, clr, sclr, opp, opp_s)
+        opp_score = self.evaluate(next_chips, opp, opp_s, clr, sclr)
+        delta_score = my_score - opp_score
 
-        # 评估未来可能
         future_potential = 0
         if draft_card:
             valid = self.get_valid_positions(draft_card, next_chips, opp)
             future_potential = len(valid)
 
+        if my_score >= 9999:
+            return float('inf')
         return delta_score + 1.5 * future_potential
 
     def evaluate(self, chips, clr, sclr, opp, opp_s):
