@@ -5,7 +5,7 @@ from agents.t_052.example_bfs import THINKTIME
 
 EMPTY = '_'
 JOKER = 'X'
-THINKTIME = 0.97
+THINKTIME = 0.99
 
 def simulate_action_on_board(chips, action, player_colour):
     new_chips = deepcopy(chips)
