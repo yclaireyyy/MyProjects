@@ -1,7 +1,6 @@
 import time
 from copy import deepcopy
 from Sequence.sequence_utils import *
-
 THINKTIME = 0.95
 
 def simulate_action_on_board(chips, action, player_colour):
