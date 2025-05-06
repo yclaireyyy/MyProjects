@@ -1,4 +1,4 @@
-
+import random
 from copy import deepcopy
 
 EMPTY = '_'
@@ -20,6 +20,7 @@ class myAgent:
         self.op_last = 0
         self.guesses = []
 
+
         self.card_mapping = {
             '2c': [(1, 4), (3, 6)], '2d': [(2, 2), (5, 9)], '2h': [(5, 4), (8, 7)], '2s': [(0, 1), (8, 6)],
             '3c': [(1, 3), (3, 5)], '3d': [(2, 3), (6, 9)], '3h': [(5, 5), (8, 8)], '3s': [(0, 2), (8, 5)],
@@ -36,6 +37,7 @@ class myAgent:
         }
 
     def SelectAction(self, actions, game_state):
+        self.guess_hand(game_state)
         chips = game_state.board.chips
         player = game_state.agents[self.id]
         clr, sclr = player.colour, player.seq_colour
@@ -44,28 +46,34 @@ class myAgent:
         best_score = float('-inf')
         best_action = None
         for action in actions:
-            score = self.evaluate_action_value(action, game_state, clr, sclr, opp, opp_s)
+            score = self.evaluate_action_value(action, chips, clr, sclr, opp, opp_s)
             if score > best_score:
                 best_score = score
                 best_action = action
         return best_action
 
-    def evaluate_action_value(self, action, game_state, clr, sclr, opp, opp_s):
-        chips = game_state.board.chips
+    def evaluate_action_value(self, action, chips, clr, sclr, opp, opp_s):
         draft_card = action.get("draft_card")
 
-        next_chips = simulate_action_on_board(chips, action, clr)
-        my_score = self.evaluate(next_chips, clr, sclr, opp, opp_s)
-        opp_score = self.evaluate(next_chips, opp, opp_s, clr, sclr)
-        delta_score = my_score - opp_score
+        if action.get("type") == "trade":
+            # 不模拟落子，直接评估未来潜力
+            next_chips = chips
+            delta_score = 0
+        else:
+            # 模拟落子
+            next_chips = simulate_action_on_board(chips, action, clr)
+            my_score = self.evaluate(next_chips, clr, sclr, opp, opp_s)
+            opp_score = self.evaluate(next_chips, opp, opp_s, clr, sclr)
+            delta_score = my_score - opp_score
+            if my_score >= 9999:
+                return float('inf')
 
+        # 评估未来可能
         future_potential = 0
         if draft_card:
             valid = self.get_valid_positions(draft_card, next_chips, opp)
             future_potential = len(valid)
 
-        if my_score >= 9999:
-            return float('inf')
         return delta_score + 1.5 * future_potential
 
     def evaluate(self, chips, clr, sclr, opp, opp_s):
@@ -111,3 +119,23 @@ class myAgent:
             return [(r, c) for r in range(10) for c in range(10) if chips[r][c] == opp_colour]
         else:
             return [pos for pos in self.card_mapping.get(card, []) if chips[pos[0]][pos[1]] == EMPTY]
+
+    def guess_hand(self, game_state):
+        op_trace = game_state.agents[1-self.id].agent_trace.action_reward[self.op_last:]
+        self.op_last = len(game_state.agents[1-self.id].agent_trace.action_reward)
+        p, d = self.extract(op_trace)
+        for each in p:
+            self.guesses.append(each)
+        for each in d:
+            if each in self.guesses:
+                self.guesses.remove(each)
+
+    def extract(self, trace:list):
+        picked = []
+        discarded = []
+        for action, r in trace:
+            if action["draft_card"] is not None:
+                picked.append(action["draft_card"])
+            if action["play_card"] is not None:
+                discarded.append(action["play_card"])
+        return picked, discarded
