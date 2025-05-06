@@ -2,7 +2,8 @@ import time
 from copy import deepcopy
 from Sequence.sequence_utils import *
 
-THINKTIME = 0.99
+THINKTIME = 0.95
+
 
 def simulate_action_on_board(chips, action, player_colour):
     new_chips = deepcopy(chips)
@@ -13,6 +14,7 @@ def simulate_action_on_board(chips, action, player_colour):
     elif act_type == 'remove':
         new_chips[r][c] = EMPTY
     return new_chips
+
 
 def deduplicate_actions(actions):
     seen = set()
@@ -63,7 +65,7 @@ class myAgent:
         best_score = float('-inf')
         best_action = None
         for action in actions:
-            if time.time()-start_time > THINKTIME:
+            if time.time() - start_time > THINKTIME:
                 break
             score = self.evaluate_action_value(action, chips, clr, sclr, opp, opp_s)
             if score > best_score:
@@ -83,7 +85,7 @@ class myAgent:
             next_chips = simulate_action_on_board(chips, action, clr)
             my_score = self.evaluate(next_chips, clr, sclr, opp, opp_s)
             opp_score = self.evaluate(next_chips, opp, opp_s, clr, sclr)
-            delta_score = my_score - opp_score
+            delta_score = my_score - 0.9 * opp_score
             if my_score >= 9999:
                 return float('inf')
 
@@ -93,12 +95,15 @@ class myAgent:
             valid = self.get_valid_positions(draft_card, next_chips, opp)
             # future_potential = len(valid)
             for each in valid:
-                next_action = {'play_card':draft_card, 'draft_card':None, 'type':'place', 'coords':each}
+                next_action = {'play_card': draft_card, 'draft_card': None, 'type': 'place', 'coords': each}
                 my_chips = simulate_action_on_board(next_chips, next_action, clr)
-                op_chips =simulate_action_on_board(next_chips, next_action, opp)
-                future_potential = max(future_potential, self.evaluate(my_chips, clr, sclr, opp, opp_s) - self.evaluate(op_chips, opp, opp_s, clr, sclr))
+                op_chips = simulate_action_on_board(next_chips, next_action, opp)
+                future_potential = max(future_potential,
+                                       self.evaluate(my_chips, clr, sclr, opp, opp_s) - 0.9 * self.evaluate(op_chips,
+                                                                                                            opp, opp_s,
+                                                                                                            clr, sclr))
 
-        return delta_score + 0.9 * future_potential
+        return delta_score + 0.81 * future_potential
 
     def evaluate(self, chips, clr, sclr, opp, opp_s):
         jokers = {(0, 0), (0, 9), (9, 0), (9, 9)}
