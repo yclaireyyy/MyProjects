@@ -2,7 +2,7 @@ import time
 from copy import deepcopy
 from Sequence.sequence_utils import *
 
-THINKTIME = 0.93
+THINKTIME = 0.95
 
 
 def simulate_action_on_board(chips, action, player_colour):
@@ -64,12 +64,17 @@ class myAgent:
 
         best_score = float('-inf')
         best_action = None
+        cnt = 0
         for action in actions:
+            cnt += 1
             score = self.evaluate_action_value(action, chips, clr, sclr, opp, opp_s)
             if score > best_score:
                 best_score = score
                 best_action = action
             if time.time() - start_time > THINKTIME:
+                print(f"reached limit, searched {cnt} actions")
+                for a in actions:
+                    print(a)
                 return best_action
         return best_action
 
@@ -92,17 +97,19 @@ class myAgent:
         # 评估未来可能
         future_potential = 0
         if draft_card:
-            valid = self.get_valid_positions(draft_card, next_chips, opp)
-            # future_potential = len(valid)
-            for each in valid:
-                next_action = {'play_card': draft_card, 'draft_card': None, 'type': 'place', 'coords': each}
-                my_chips = simulate_action_on_board(next_chips, next_action, clr)
-                op_chips = simulate_action_on_board(next_chips, next_action, opp)
-                future_potential = max(future_potential,
-                                       self.evaluate(my_chips, clr, sclr, opp, opp_s) - 0.9 * self.evaluate(op_chips,
-                                                                                                            opp, opp_s,
-                                                                                                            clr, sclr))
-
+            if draft_card[0] == 'j':
+                future_potential = 100
+            else:
+                valid = self.get_valid_positions(draft_card, next_chips, opp)
+                # future_potential = len(valid)
+                for each in valid:
+                    next_action = {'play_card': draft_card, 'draft_card': None, 'type': 'place', 'coords': each}
+                    my_chips = simulate_action_on_board(next_chips, next_action, clr)
+                    op_chips = simulate_action_on_board(next_chips, next_action, opp)
+                    future_potential = max(future_potential,
+                                           self.evaluate(my_chips, clr, sclr, opp, opp_s) - 0.9 * self.evaluate(op_chips,
+                                                                                                                opp, opp_s,
+                                                                                                                clr, sclr))
         return delta_score + 0.81 * future_potential
 
     def evaluate(self, chips, clr, sclr, opp, opp_s):
