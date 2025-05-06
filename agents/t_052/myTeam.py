@@ -2,7 +2,7 @@ import time
 from copy import deepcopy
 from Sequence.sequence_utils import *
 
-THINKTIME = 0.95
+THINKTIME = 0.93
 
 
 def simulate_action_on_board(chips, action, player_colour):
@@ -65,12 +65,12 @@ class myAgent:
         best_score = float('-inf')
         best_action = None
         for action in actions:
-            if time.time() - start_time > THINKTIME:
-                break
             score = self.evaluate_action_value(action, chips, clr, sclr, opp, opp_s)
             if score > best_score:
                 best_score = score
                 best_action = action
+            if time.time() - start_time > THINKTIME:
+                break
         return best_action
 
     def evaluate_action_value(self, action, chips, clr, sclr, opp, opp_s):
