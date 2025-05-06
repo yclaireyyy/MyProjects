@@ -67,7 +67,7 @@ class myAgent:
         best_score = float('-inf')
         best_action = None
         for action in actions:
-            if time.time()-start_time < THINKTIME:
+            if time.time()-start_time > THINKTIME:
                 break
             score = self.evaluate_action_value(action, chips, clr, sclr, opp, opp_s)
             if score > best_score:
