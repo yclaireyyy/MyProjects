@@ -58,7 +58,7 @@ class myAgent:
 
     def SelectAction(self, actions, game_state):
         start_time = time.time()
-        actions = deduplicate_actions(actions)
+        # actions = deduplicate_actions(actions)
         chips = game_state.board.chips
         player = game_state.agents[self.id]
         clr, sclr = player.colour, player.seq_colour
