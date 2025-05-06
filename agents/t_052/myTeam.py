@@ -70,7 +70,7 @@ class myAgent:
                 best_score = score
                 best_action = action
             if time.time() - start_time > THINKTIME:
-                break
+                return best_action
         return best_action
 
     def evaluate_action_value(self, action, chips, clr, sclr, opp, opp_s):
