@@ -1,3 +1,4 @@
+import random
 from copy import deepcopy
 
 EMPTY = '_'
@@ -13,12 +14,28 @@ def simulate_action_on_board(chips, action, player_colour):
         new_chips[r][c] = EMPTY
     return new_chips
 
+def deduplicate_actions(actions):
+    seen = set()
+    unique_actions = []
+    for action in actions:
+        # 将关键字段组成元组用于哈希
+        key = (
+            action.get("type"),
+            tuple(action.get("coords")) if action.get("coords") else None,
+            action.get("play_card"),
+            action.get("draft_card")
+        )
+        if key not in seen:
+            seen.add(key)
+            unique_actions.append(action)
+    return unique_actions
+
+
 class myAgent:
     def __init__(self, _id):
         self.id = _id
         self.op_last = 0
         self.guesses = []
-
 
         self.card_mapping = {
             '2c': [(1, 4), (3, 6)], '2d': [(2, 2), (5, 9)], '2h': [(5, 4), (8, 7)], '2s': [(0, 1), (8, 6)],
@@ -36,7 +53,7 @@ class myAgent:
         }
 
     def SelectAction(self, actions, game_state):
-        self.guess_hand(game_state)
+        actions = deduplicate_actions(actions)
         chips = game_state.board.chips
         player = game_state.agents[self.id]
         clr, sclr = player.colour, player.seq_colour
@@ -118,23 +135,3 @@ class myAgent:
             return [(r, c) for r in range(10) for c in range(10) if chips[r][c] == opp_colour]
         else:
             return [pos for pos in self.card_mapping.get(card, []) if chips[pos[0]][pos[1]] == EMPTY]
-
-    def guess_hand(self, game_state):
-        op_trace = game_state.agents[1-self.id].agent_trace.action_reward[self.op_last:]
-        self.op_last = len(game_state.agents[1-self.id].agent_trace.action_reward)
-        p, d = self.extract(op_trace)
-        for each in p:
-            self.guesses.append(each)
-        for each in d:
-            if each in self.guesses:
-                self.guesses.remove(each)
-
-    def extract(self, trace:list):
-        picked = []
-        discarded = []
-        for action, r in trace:
-            if action["draft_card"] is not None:
-                picked.append(action["draft_card"])
-            if action["play_card"] is not None:
-                discarded.append(action["play_card"])
-        return picked, discarded
