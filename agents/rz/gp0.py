@@ -1,9 +1,9 @@
 import random
 from copy import deepcopy
 
-## 一步贪心：落子时考虑自己得分和阻止对手得分
+## 一步贪心：仅考虑自己得分
 
-EMPTY = '_'  # 空格
+EMPTY = '_'  # 确保与你的项目中定义一致
 JOKER = 'X'  # 四个角落万能格
 
 def simulate_action_on_board(chips, action, player_colour):
@@ -42,9 +42,7 @@ class myAgent:
                 # 模拟这个动作后的状态
                 next_chips = simulate_action_on_board(chips, action, clr)
                 # 评估局面
-                my_score = self.evaluate(next_chips,clr, sclr,opp,opp_s)
-                opp_score = self.evaluate(next_chips,opp,opp_s,clr, sclr)
-                score = my_score - opp_score
+                score = self.evaluate(next_chips,clr, sclr,opp,opp_s)
                 if score > best_score:
                     best_score = score
                     best_action = action
