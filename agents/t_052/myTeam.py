@@ -1,8 +1,12 @@
 import random
+import time
 from copy import deepcopy
+
+from agents.t_052.example_bfs import THINKTIME
 
 EMPTY = '_'
 JOKER = 'X'
+THINKTIME = 0.95
 
 def simulate_action_on_board(chips, action, player_colour):
     new_chips = deepcopy(chips)
@@ -53,6 +57,7 @@ class myAgent:
         }
 
     def SelectAction(self, actions, game_state):
+        start_time = time.time()
         actions = deduplicate_actions(actions)
         chips = game_state.board.chips
         player = game_state.agents[self.id]
@@ -62,6 +67,8 @@ class myAgent:
         best_score = float('-inf')
         best_action = None
         for action in actions:
+            if time.time()-start_time < THINKTIME:
+                break
             score = self.evaluate_action_value(action, chips, clr, sclr, opp, opp_s)
             if score > best_score:
                 best_score = score
