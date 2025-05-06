@@ -79,7 +79,7 @@ class GUIDisplayer(Displayer):
         self.delay = delay
         # Absolute positions for resources (hands, discards, chips).
         global s,HAND_POS,DISC_POS,TITL_POS,CHIP_POS,DRFT_POS,CHIP_SEP,CARD_SEP,DRFT_SEP,C_WIDTH,C_HEIGHT
-        s = 0.5 if scale else 1
+        s = 0.5
         HAND_POS = [(124*s,930*s), (124*s,112*s), (1612*s,112*s), (1612*s,930*s)]
         DISC_POS = [(216*s,656*s), (216*s,425*s), (1706*s,425*s), (1706*s,656*s)]
         TITL_POS = [( 48*s,792*s), ( 48*s,257*s), (1537*s,257*s), (1537*s,792*s)]

@@ -258,6 +258,7 @@ def run(options,msg):
         random_seed = options.setRandomSeed
     
     # make sure random seed is traceable
+    print(random_seed)
     random.seed(random_seed)
     seed_list = [random.randint(0,int(1e10)) for _ in range(1000)]
     seed_idx = 0
@@ -404,7 +405,6 @@ def run(options,msg):
             matches["loses"] = loses
             matches["win_rates"] = win_rates
             matches["succ"] = True
-
         return matches
 
 
