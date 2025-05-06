@@ -118,7 +118,25 @@ class myAgent:
         heart = [(4, 4), (4, 5), (5, 4), (5, 5)]
         if all(is_ours(r, c) for r, c in heart):
             return 9999
-        heart_score = sum(1 for r, c in heart if is_ours(r, c))
+        heart_state = 0
+        heart_score = 0
+        for r, c in heart:
+            if is_ours(r, c):
+                heart_state += 1
+            elif is_opp(r, c):
+                heart_state = -1
+                break
+
+        if heart_state == 0:
+            heart_score = 0
+        elif heart_state == 1:
+            heart_score = 4
+        elif heart_state == 2:
+            heart_score = 15
+        elif heart_state == 3:
+            heart_score = 24
+        elif heart_state == 4:
+            heart_score = 9999
 
         directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
         seq_score = 0
@@ -140,7 +158,7 @@ class myAgent:
                         if blocked_before and blocked_after:
                             continue
                         seq_score += count ** 2
-        return heart_score * 30 + seq_score
+        return heart_score + seq_score
 
     def get_valid_positions(self, card, chips, opp_colour=None):
         if card in ['jc', 'jd']:
