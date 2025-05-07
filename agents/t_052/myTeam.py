@@ -7,7 +7,7 @@ from collections import defaultdict
 class myAgent(Agent):
     def __init__(self, _id):
         """Agent initialization constructor
-        Args:
+        Args
             _id (int): Player identifier (0 or 1)
         """
         super().__init__(_id)
