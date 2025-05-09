@@ -53,8 +53,6 @@ z = (x - 4.5) ** 2 + (y - 4.5) ** 2
 POSITION_WEIGHTS = np.exp(-SMOOTH * z)
 POSITION_WEIGHTS *= SCALE
 
-
-
 # -------------------------------- UTILS --------------------------------
 # Two eyed jacks can be placed anywhere EMPTY
 def get_two_eyed_pos(chips):
@@ -609,7 +607,7 @@ class myAgent:
         self.id = _id
 
     def SelectAction(self, actions, game_state:SequenceState):
-
+        return random.choice(actions)
         myself = game_state.agents[self.id]
         hand_cards = myself.hand
         board = game_state.board
