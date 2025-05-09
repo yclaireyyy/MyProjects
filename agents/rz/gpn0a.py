@@ -48,7 +48,8 @@ z = (x - 4.5) ** 2 + (y - 4.5) ** 2
 POSITION_WEIGHTS = np.exp(-SMOOTH * z)
 POSITION_WEIGHTS *= SCALE
 
-
+HEART_PRE_BIAS = 0.5
+POSITION_WEIGHTS[HEART_POS] += HEART_PRE_BIAS
 
 # -------------------------------- UTILS --------------------------------
 # Two eyed jacks can be placed anywhere EMPTY
