@@ -3,7 +3,7 @@
 # Purpose:  An Sequence AI Agent
 # Method:   Three Step Analyse
 # Details:
-#   Step 1: Simulation all my possible
+#   Select best position and best card
 
 # -------------------------------- IMPORTS --------------------------------
 import numpy as np

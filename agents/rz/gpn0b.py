@@ -41,14 +41,14 @@ PLACE_REMOVE_SCALE = -0.2
 PLACE_BIAS = 0.2
 REMOVE_BIAS = 0.4
 SMOOTH = 0.1
-SCALE = 10
+SCALE = 11
 x = np.arange(10).reshape(-1, 1)
 y = np.arange(10).reshape(1, -1)
 z = (x - 4.5) ** 2 + (y - 4.5) ** 2
 POSITION_WEIGHTS = np.exp(-SMOOTH * z)
 POSITION_WEIGHTS *= SCALE
 
-HEART_PRE_BIAS = 0
+HEART_PRE_BIAS = 0.5
 POSITION_WEIGHTS[HEART_POS] += HEART_PRE_BIAS
 
 # -------------------------------- UTILS --------------------------------
@@ -659,16 +659,26 @@ class myAgent:
                 if (r,c) not in all_positions:
                     all_positions.append((r,c))
                     new_actions.append((each, (r,c), "remove", my_value["remove"][r][c]))
-        if d_t_jacks:
+        if d_t_jacks and not d_o_jacks:
             d = d_t_jacks[0]
-        elif d_o_jacks:
-            d = d_o_jacks[0]
+        elif d_t_jacks and d_o_jacks:
+            dlist = []
+            positions = get_one_eyed_pos(chips, oc)
+            for (r, c) in positions:
+                dlist.append((d_o_jacks[0], my_value["remove"][r][c]))
+            positions = get_two_eyed_pos(chips)
+            for (r, c) in positions:
+                dlist.append((d_t_jacks[0], my_value["place"][r][c]))
         else:
             dlist = []
             for each in d_normal:
                 positions = get_normal_pos(chips, each)
                 for (r,c) in positions:
                     dlist.append((each, my_value["place"][r][c]))
+            if d_o_jacks:
+                positions = get_one_eyed_pos(chips, oc)
+                for (r, c) in positions:
+                    dlist.append((d_o_jacks[0], my_value["remove"][r][c]))
             dlist.sort(key=lambda x: x[1],reverse=True)
             d = dlist[0][0]
         if actions[0].get("type") == "trade":
