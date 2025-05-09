@@ -3,7 +3,7 @@
 # Purpose:  An Sequence AI Agent
 # Method:   Three Step Analyse
 # Details:
-#   Step 1: Simulation all my possible
+#   Select best position and best card
 
 # -------------------------------- IMPORTS --------------------------------
 import numpy as np
@@ -151,16 +151,15 @@ def heart_weight(my, op):
         (2, 2): (0, 30),
 
         (1, 0): (30, 0),
-        (0, 1): (20, 0),
+        (0, 1): (20, 10),
 
         (2, 0): (50, 0),
-        (0, 2): (30, 0),
+        (0, 2): (30, 20),
+        (2, 1): (50, 20),
+        (1, 2): (30, 50),
 
         (0, 3): (float('inf'), 100),
         (3, 0): (float('inf'), 0),
-
-        (2, 1): (50, 20),
-        (1, 2): (30, 50),
         (3, 1): (0, 200),
         (1, 3): (0, 100),
     }
@@ -659,26 +658,16 @@ class myAgent:
                 if (r,c) not in all_positions:
                     all_positions.append((r,c))
                     new_actions.append((each, (r,c), "remove", my_value["remove"][r][c]))
-        if d_t_jacks and not d_o_jacks:
+        if d_t_jacks:
             d = d_t_jacks[0]
-        elif d_t_jacks and d_o_jacks:
-            dlist = []
-            positions = get_one_eyed_pos(chips, oc)
-            for (r, c) in positions:
-                dlist.append((d_o_jacks[0], my_value["remove"][r][c]))
-            positions = get_two_eyed_pos(chips)
-            for (r, c) in positions:
-                dlist.append((d_t_jacks[0], my_value["place"][r][c]))
+        elif d_o_jacks:
+            d = d_o_jacks[0]
         else:
             dlist = []
             for each in d_normal:
                 positions = get_normal_pos(chips, each)
                 for (r,c) in positions:
                     dlist.append((each, my_value["place"][r][c]))
-            if d_o_jacks:
-                positions = get_one_eyed_pos(chips, oc)
-                for (r, c) in positions:
-                    dlist.append((d_o_jacks[0], my_value["remove"][r][c]))
             dlist.sort(key=lambda x: x[1],reverse=True)
             d = dlist[0][0]
         if actions[0].get("type") == "trade":
@@ -693,3 +682,5 @@ class myAgent:
                 "coords": new_actions[0][1],
             }
         return action
+
+

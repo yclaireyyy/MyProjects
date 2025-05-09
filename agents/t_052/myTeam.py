@@ -3,7 +3,7 @@
 # Purpose:  An Sequence AI Agent
 # Method:   Three Step Analyse
 # Details:
-#   Select best position and best card
+#   Greedy select best position and best card
 
 # -------------------------------- IMPORTS --------------------------------
 import numpy as np
@@ -41,14 +41,14 @@ PLACE_REMOVE_SCALE = -0.2
 PLACE_BIAS = 0.2
 REMOVE_BIAS = 0.4
 SMOOTH = 0.1
-SCALE = 10
+SCALE = 11
 x = np.arange(10).reshape(-1, 1)
 y = np.arange(10).reshape(1, -1)
 z = (x - 4.5) ** 2 + (y - 4.5) ** 2
 POSITION_WEIGHTS = np.exp(-SMOOTH * z)
 POSITION_WEIGHTS *= SCALE
 
-HEART_PRE_BIAS = 0
+HEART_PRE_BIAS = 0.5
 POSITION_WEIGHTS[HEART_POS] += HEART_PRE_BIAS
 
 # -------------------------------- UTILS --------------------------------
@@ -151,16 +151,15 @@ def heart_weight(my, op):
         (2, 2): (0, 30),
 
         (1, 0): (30, 0),
-        (0, 1): (20, 0),
+        (0, 1): (20, 10),
 
         (2, 0): (50, 0),
-        (0, 2): (30, 0),
+        (0, 2): (30, 20),
+        (2, 1): (50, 20),
+        (1, 2): (30, 50),
 
         (0, 3): (float('inf'), 100),
         (3, 0): (float('inf'), 0),
-
-        (2, 1): (50, 20),
-        (1, 2): (30, 50),
         (3, 1): (0, 200),
         (1, 3): (0, 100),
     }
