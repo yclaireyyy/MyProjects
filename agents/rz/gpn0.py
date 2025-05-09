@@ -7,6 +7,7 @@
 
 # -------------------------------- IMPORTS --------------------------------
 import numpy as np
+from copy import deepcopy
 from collections import deque
 from Sequence.sequence_model import *
 from Sequence.sequence_utils import *
@@ -666,15 +667,17 @@ class myAgent:
                     dlist.append((each, my_value["place"][r][c]))
             dlist.sort(key=lambda x: x[1],reverse=True)
             d = dlist[0][0]
-        new_actions.sort(key=lambda a: a[3], reverse=True)
-        action = {
-            "type":new_actions[0][2],
-            "play_card":new_actions[0][0],
-            "draft_card":d,
-            "coords":new_actions[0][1],
-        }
-        print(action)
-        print(actions[0])
+        if actions[0].get("type") == "trade":
+            action = deepcopy(actions[0])
+            action["draft_card"] = d
+        else:
+            new_actions.sort(key=lambda a: a[3], reverse=True)
+            action = {
+                "type": new_actions[0][2],
+                "play_card": new_actions[0][0],
+                "draft_card": d,
+                "coords": new_actions[0][1],
+            }
         return action
 
 
