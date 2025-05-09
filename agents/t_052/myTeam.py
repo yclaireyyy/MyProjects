@@ -3,10 +3,8 @@
 # Purpose:  An Sequence AI Agent
 # Method:   Three Step Analyse
 # Details:
-#   Step 1: Simulation all my possible
-
+#   Greedy AI Agent for Sequence Game
 # -------------------------------- IMPORTS --------------------------------
-
 import numpy as np
 from collections import deque
 from Sequence.sequence_model import *
@@ -44,6 +42,7 @@ y = np.arange(10).reshape(1, -1)
 z = (x - 4.5) ** 2 + (y - 4.5) ** 2
 POSITION_WEIGHTS = np.exp(-SMOOTH * z)
 POSITION_WEIGHTS *= SCALE
+
 
 # -------------------------------- UTILS --------------------------------
 # Two eyed jacks can be placed anywhere EMPTY
@@ -201,7 +200,7 @@ class BoardEvaluator:
         place_bias = 0.25
         remove_bias = 0.45
         weight_fn = exp_weight
-        pos_weight = np.zeros((3,10,10))
+        pos_weight = np.zeros((3, 10, 10))
         combined = {
             0: {'place': np.zeros((10, 10), dtype=np.float32),
                 'remove': np.zeros((10, 10), dtype=np.float32)},
@@ -224,7 +223,7 @@ class BoardEvaluator:
 
                     # ----- 移除类：对方活子 -----
                     elif ((player == 0 and cell == BLU) or (player == 1 and cell == RED)):
-                        pos_weight[player+1][r][c] = 1
+                        pos_weight[player + 1][r][c] = 1
                         remove_4 = values[player]['removal'][:, r, c]
                         override_4 = values[player]['override'][:, r, c]
                         remove_val = weight_fn(remove_4, seq[1 - player])
@@ -245,10 +244,10 @@ class BoardEvaluator:
             elif chips[x][y] == RED:
                 combined[1]['remove'][x][y] = max(combined[1]['remove'][x][y], remove_heart_blue)
         if USE_POSITION_WEIGHT:
-            combined[0]['place'] += POSITION_WEIGHTS*pos_weight[0]
-            combined[1]['place'] += POSITION_WEIGHTS*pos_weight[0]
-            combined[0]['remove'] += POSITION_WEIGHTS*pos_weight[1]
-            combined[1]['remove'] += POSITION_WEIGHTS*pos_weight[2]
+            combined[0]['place'] += POSITION_WEIGHTS * pos_weight[0]
+            combined[1]['place'] += POSITION_WEIGHTS * pos_weight[0]
+            combined[0]['remove'] += POSITION_WEIGHTS * pos_weight[1]
+            combined[1]['remove'] += POSITION_WEIGHTS * pos_weight[2]
         return combined
 
     @staticmethod
@@ -598,7 +597,7 @@ class myAgent:
     def __init__(self, _id):
         self.id = _id
 
-    def SelectAction(self, actions, game_state:SequenceState):
+    def SelectAction(self, actions, game_state: SequenceState):
         myself = game_state.agents[self.id]
         hand_cards = myself.hand
         board = game_state.board
@@ -636,22 +635,22 @@ class myAgent:
 
         for each in normal:
             positions = get_normal_pos(chips, each)
-            for (r,c) in positions:
-                if (r,c) not in all_positions:
-                    all_positions.append((r,c))
-                    new_actions.append((each, (r,c), "place", my_value["place"][r][c]))
+            for (r, c) in positions:
+                if (r, c) not in all_positions:
+                    all_positions.append((r, c))
+                    new_actions.append((each, (r, c), "place", my_value["place"][r][c]))
         for each in t_jacks:
             positions = get_two_eyed_pos(chips)
-            for (r,c) in positions:
-                if (r,c) not in all_positions:
-                    all_positions.append((r,c))
-                    new_actions.append((each, (r,c), "place", my_value["place"][r][c]))
+            for (r, c) in positions:
+                if (r, c) not in all_positions:
+                    all_positions.append((r, c))
+                    new_actions.append((each, (r, c), "place", my_value["place"][r][c]))
         for each in o_jacks:
             positions = get_one_eyed_pos(chips, oc)
-            for (r,c) in positions:
-                if (r,c) not in all_positions:
-                    all_positions.append((r,c))
-                    new_actions.append((each, (r,c), "remove", my_value["remove"][r][c]))
+            for (r, c) in positions:
+                if (r, c) not in all_positions:
+                    all_positions.append((r, c))
+                    new_actions.append((each, (r, c), "remove", my_value["remove"][r][c]))
         if d_t_jacks:
             d = d_t_jacks[0]
         elif d_o_jacks:
@@ -660,16 +659,16 @@ class myAgent:
             dlist = []
             for each in d_normal:
                 positions = get_normal_pos(chips, each)
-                for (r,c) in positions:
+                for (r, c) in positions:
                     dlist.append((each, my_value["place"][r][c]))
-            dlist.sort(key=lambda x: x[1],reverse=True)
+            dlist.sort(key=lambda x: x[1], reverse=True)
             d = dlist[0][0]
         new_actions.sort(key=lambda a: a[3], reverse=True)
         action = {
-            "type":new_actions[0][2],
-            "play_card":new_actions[0][0],
-            "draft_card":d,
-            "coords":new_actions[0][1],
+            "type": new_actions[0][2],
+            "play_card": new_actions[0][0],
+            "draft_card": d,
+            "coords": new_actions[0][1],
         }
         print(action)
         print(actions[0])
