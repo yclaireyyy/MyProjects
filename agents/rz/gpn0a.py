@@ -48,7 +48,7 @@ z = (x - 4.5) ** 2 + (y - 4.5) ** 2
 POSITION_WEIGHTS = np.exp(-SMOOTH * z)
 POSITION_WEIGHTS *= SCALE
 
-HEART_PRE_BIAS = 0.5
+HEART_PRE_BIAS = 0
 POSITION_WEIGHTS[HEART_POS] += HEART_PRE_BIAS
 
 # -------------------------------- UTILS --------------------------------
@@ -146,15 +146,15 @@ def exp_weight(values, ln):
 def heart_weight(my, op):
     # 硬编码所有 (my, op) → (place, remove)
     table = {
-        (0, 0): (10, 0),
+        (0, 0): (15, 0),
         (1, 1): (20, 10),
         (2, 2): (0, 30),
 
         (1, 0): (30, 0),
-        (0, 1): (10, 0),
+        (0, 1): (20, 0),
 
         (2, 0): (50, 0),
-        (0, 2): (10, 0),
+        (0, 2): (30, 0),
 
         (0, 3): (float('inf'), 100),
         (3, 0): (float('inf'), 0),
