@@ -37,6 +37,7 @@ DIRECTIONS = [
 
 HEART_POS = [(4, 4), (4, 5), (5, 4), (5, 5)]
 USE_POSITION_WEIGHT = True
+PLACE_REMOVE_SCALE = -0.2
 PLACE_BIAS = 0.2
 REMOVE_BIAS = 0.4
 SMOOTH = 0.1
@@ -222,6 +223,7 @@ class BoardEvaluator:
                         place_val = weight_fn(place_4, seq[player])
                         block_val = weight_fn(block_4, seq[1 - player])
                         total = (1 + PLACE_BIAS) * place_val + (1 - PLACE_BIAS) * block_val
+                        total *= (1 + PLACE_REMOVE_SCALE)
                         combined[player]['place'][r][c] = total
 
                     # ----- 移除类：对方活子 -----
@@ -232,6 +234,7 @@ class BoardEvaluator:
                         remove_val = weight_fn(remove_4, seq[1 - player])
                         override_val = weight_fn(override_4, seq[player])
                         total = (1 + REMOVE_BIAS) * remove_val + (1 - REMOVE_BIAS) * override_val
+                        total *= (1 - PLACE_REMOVE_SCALE)
                         combined[player]['remove'][r][c] = total
 
         place_heart_red, remove_heart_red = heart_weight(red_heart, blue_heart)
