@@ -52,10 +52,7 @@ y = np.arange(10).reshape(1, -1)
 z = (x - 4.5) ** 2 + (y - 4.5) ** 2
 POSITION_WEIGHTS = np.exp(-SMOOTH * z)
 POSITION_WEIGHTS *= SCALE
-for i in range(10):
-    for j in range(10):
-        print(f"{POSITION_WEIGHTS[i,j]:0.2f}",end=" ")
-    print()
+
 
 
 # -------------------------------- UTILS --------------------------------
