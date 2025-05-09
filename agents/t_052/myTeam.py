@@ -6,17 +6,9 @@
 #   Step 1: Simulation all my possible
 
 # -------------------------------- IMPORTS --------------------------------
-import random
+
 import numpy as np
-
-from copy import deepcopy
 from collections import deque
-
-from matplotlib.pyplot import draw_all
-from pygltflib import SCALE
-from sympy.polys.densebasic import dmp_normal
-
-from template import Agent
 from Sequence.sequence_model import *
 from Sequence.sequence_utils import *
 
@@ -607,7 +599,6 @@ class myAgent:
         self.id = _id
 
     def SelectAction(self, actions, game_state:SequenceState):
-        return random.choice(actions)
         myself = game_state.agents[self.id]
         hand_cards = myself.hand
         board = game_state.board
