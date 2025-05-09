@@ -3,7 +3,7 @@
 # Purpose:  An Sequence AI Agent
 # Method:   Three Step Analyse
 # Details:
-#   Step 1: Simulation all my possible
+#   Greedy select move with the highest score
 
 # -------------------------------- IMPORTS --------------------------------
 import numpy as np
