@@ -16,7 +16,7 @@ SIMULATION_LIMIT = 100  # MCTS模拟的最大次数
 
 class Node:
     """
-    The search tree node integrating MCTS & A*
+    The search tree node integrating MCTS and A*
     """
     def __init__(self, state, parent=None, action=None):
         # 状态表示
