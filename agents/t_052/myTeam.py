@@ -267,12 +267,6 @@ class BoardEvaluator:
                 r, b = BoardEvaluator.evaluate_line_max_streak(chips, x_start, y_start, length, dx, dy)
                 values[0][r] += 1
                 values[1][b] += 1
-                # if r == 5 or b == 5:
-                #     xxx = x_start
-                #     yyy = y_start
-                #     print(x_start,y_start,length,dx,dy,length,r,b)
-                #     for ttt in range(length):
-                #         print(chips[xxx+ttt*dx][yyy+ttt*dy], end=" ")
         heart_value = BoardEvaluator.evaluate_heart(chips)
         return values, heart_value
 
