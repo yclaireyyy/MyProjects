@@ -112,7 +112,7 @@ class Node:
     """
     @staticmethod
     def heuristic(state, action):
-        """A*启发式函数 - 评估动作的潜在价值（越低越好）"""
+        """A*启发式函数 - 评估动作的潜在价值（越低越好）""
         if action.get('type') != 'place' or 'coords' not in action:
             return 100  # 非放置动作或无坐标
 
