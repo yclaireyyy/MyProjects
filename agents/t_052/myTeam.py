@@ -9,7 +9,7 @@ import itertools
 # Constants
 MAX_THINK_TIME = 0.95  # 最大思考时间（秒）
 EXPLORATION_WEIGHT = 1.4  # UCB公式中的探索参数
-HOTB_COORDS = [(4, 4), (4, 5), (5, 4), (5, 5)]  # 中心热点位置
+HOTB_COORDS = [(4, 4), (4, 5), (5, 4), (5, 5)]  #中心热点位置
 CORNERS = [(0, 0), (0, 9), (9, 0), (9, 9)]  # 角落位置（自由点）
 SIMULATION_LIMIT = 100  # MCTS模拟的最大次数
 
