@@ -613,7 +613,7 @@ class Node:
             Simulation (MCTS stage 3)
     """
     @staticmethod
-    def heuristic(state, action):
+    def hybrid_heuristic(state, action):
         """A* + BoardEvaluator启发式函数 -评估动作的潜在价值（越低越好)"""
         if action.get('type') != 'place' and action.get('type') != 'remove' or 'coords' not in action:
             return 100  # 非放置/移除动作或无坐标
@@ -715,7 +715,7 @@ class Node:
         Evaluation (MCTS stage 4)
     """
     @staticmethod
-    def evaluate(state, last_action=None):
+    def hybrid_evaluate(state, last_action=None):
         """使用BoardEvaluator对局面进行全面评估"""
         board = state.board.chips
 
@@ -1035,37 +1035,46 @@ class myAgent(Agent):
     def _simulate_card_selection(self, state):
         """模拟从5张展示牌中选择一张"""
         # 检查是否有展示牌属性
-        if hasattr(state, 'display_cards') and state.display_cards:
-            # 评估每张牌的价值
-            best_card = None
-            best_value = float('-inf')
+        if not hasattr(state, 'display_cards') and state.display_cards:
+            return
+        # 评估每张牌的价值
+        best_card = None
+        best_value = float('-inf')
 
-            # 获取当前棋盘
-            board = state.board.chips
-            player_id = state.current_player_id if hasattr(state, 'current_player_id') else self.id
+        # 获取当前棋盘
+        board = state.board.chips
+        player_id = state.current_player_id if hasattr(state, 'current_player_id') else self.id
 
-            for card in state.display_cards:
-                value = self._evaluate_card(card, state)
-                if value > best_value:
-                    best_value = value
-                    best_card = card
+        for card in state.display_cards:
+            value = self._evaluate_card(card, state)
+            if value > best_value:
+                best_value = value
+                best_card = card
+        # 确保找到了最佳牌
+        if not best_card:
+            return
+        # 更新玩家手牌
+        if hasattr(state, 'agents'):
+            if hasattr(state, 'current_player_id'):
+                player_id = state.current_player_id
+                if 0 <= player_id < len(state.agents) and hasattr(state.agents[player_id], 'hand'):
+                    state.agents[player_id].hand.append(best_card)
+            else:
+                # 使用自己的ID
+                if 0 <= self.id < len(state.agents) and hasattr(state.agents[self.id], 'hand'):
+                    state.agents[self.id].hand.append(best_card)
 
-            # 选择最佳牌
-            if best_card:
-                # 更新玩家手牌
-                if hasattr(state, 'current_player_id'):
-                    player_id = state.current_player_id
-                    if player_id == self.id:
-                        state.agents[self.id].hand.append(best_card)
-                    else:
-                        state.agents[1 - self.id].hand.append(best_card)
+        # 从展示区移除所选卡牌（再次检查，以防展示牌在其他地方被修改）
+        if best_card in state.display_cards:
+            state.display_cards.remove(best_card)
 
-                # 从展示区移除所选卡牌
-                state.display_cards.remove(best_card)
-
-                # 如果有牌堆，补充一张
-                if hasattr(state, 'deck') and state.deck:
+            # 从牌堆补充一张牌（确保牌堆非空且有牌）
+            if hasattr(state, 'deck') and state.deck:
+                try:
+                    new_card = state.deck[0]  # 先查看第一张牌，不修改deck
                     state.display_cards.append(state.deck.pop(0))
+                except IndexError:  # 处理边缘情况：属性检查后牌堆变空
+                    pass  # 不处理，仅展示区减少一张牌
 
     def _evaluate_card(self, card, state, board=None, player_id=None):
         """增强版卡牌评估，结合棋盘位置价值和卡牌特性"""
@@ -1105,7 +1114,7 @@ class myAgent(Agent):
     def _select_strategic_card(self, trade_actions, game_state):
         """策略性地选择卡牌"""
         # 处理变体规则：从5张展示牌中选择
-        if hasattr(game_state, 'display_cards'):
+        if hasattr(game_state, 'display_cards') and game_state.display_cards:
             best_card = None
             best_value = float('-inf')
 
