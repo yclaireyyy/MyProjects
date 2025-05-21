@@ -945,7 +945,7 @@ class Node:
             max_hand_value = hand_value[0].get("value")
         if draft_value:
             max_draft_value = draft_value[0].get("value")
-        self.prior = self.move_value # + 1e-5 * max(max_hand_value, max_draft_value)
+        self.prior = self.move_value + 0.8 * max(max_hand_value, max_draft_value)
         # print(self.prior)
 
     def back_propagation(self):
