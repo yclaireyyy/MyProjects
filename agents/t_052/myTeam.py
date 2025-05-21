@@ -8,12 +8,10 @@
 # -------------------------------- IMPORTS --------------------------------
 import numpy as np
 import time
-import traceback
 from copy import deepcopy
 from collections import deque
 from Sequence.sequence_model import *
 from Sequence.sequence_utils import *
-from agents.rz.search1 import THINKTIME
 
 # -------------------------------- CONSTANTS --------------------------------
 ONE_EYED_JACKS = ["js", "jh"]
@@ -1171,29 +1169,3 @@ class myAgent:
                 self.op_hand.remove(each)
             else:
                 self.deck.remove(each)
-
-
-if __name__ == '__main__':
-    chips = [['#', 'b', '_', '_', '_', '_', 'b', '_', 'r', '#'], ['_', 'r', '_', 'b', 'b', '_', 'r', 'r', 'b', '_'], ['_', '_', '_', 'b', 'r', 'r', 'O', 'b', 'r', 'r'], ['_', 'r', 'X', 'r', 'b', 'b', 'O', 'r', '_', 'b'], ['_', 'b', 'b', 'X', 'b', 'r', 'O', '_', 'b', 'b'], ['b', 'r', 'r', 'r', 'X', 'b', 'O', 'b', 'r', 'r'], ['_', '_', 'r', 'r', 'b', 'X', 'O', '_', 'r', '_'], ['r', '_', 'b', '_', 'b', 'r', 'X', 'r', 'b', 'r'], ['_', '_', 'r', 'r', 'b', 'b', 'b', 'b', 'r', 'b'], ['#', 'b', 'r', 'r', '_', 'r', 'b', '_', '_', '#']]
-
-
-    myhand = ['8c', 'ac', 'kd', '6s', '2d', '9c']
-    draft = ['4h', '7d', '8s', '7s', '9d']
-    print(reconstruct_actions(chips, myhand, draft, True, "r"))
-    state = myState(
-        1,
-        chips,
-        myhand,
-        ["1s"],
-        draft,
-        ["1h"]
-    )
-    node = Node(
-        state,
-        None,
-        None
-    )
-    search_tree = SearchTree(node)
-    search_tree.search(1)
-    best_action, v = search_tree.get_best_action()
-    print(best_action)
