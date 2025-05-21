@@ -51,7 +51,7 @@ POSITION_WEIGHTS *= SCALE
 
 HEART_PRE_BIAS = 0.5
 POSITION_WEIGHTS[HEART_POS] += HEART_PRE_BIAS
-THINKTIME = 0.95
+THINKTIME = 0.8
 
 
 # -------------------------------- UTILS --------------------------------
@@ -945,7 +945,7 @@ class Node:
             max_hand_value = hand_value[0].get("value")
         if draft_value:
             max_draft_value = draft_value[0].get("value")
-        self.prior = self.move_value + 0.8 * max(max_hand_value, max_draft_value)
+        self.prior = self.move_value + 0.1 * max(max_hand_value, max_draft_value)
         # print(self.prior)
 
     def back_propagation(self):
@@ -1032,7 +1032,7 @@ class SearchTree:
     def set_root(self, root):
         self.root = root
 
-    def search(self, depth):
+    def search(self, depth, start_time):
         # print(depth)
         node = self.root
         if depth == 1:
@@ -1040,6 +1040,8 @@ class SearchTree:
             for c in node.children:
                 c.evaluate()
                 c.back_propagation()
+                if time.time() - start_time > THINKTIME:
+                    break
         else:
             node.evaluate()
 
@@ -1081,14 +1083,6 @@ class myAgent:
         print("-" * 32)
         try:
             action = self.SelectActionDB(actions, game_state)
-            # if action not in actions:
-            #     print("MY ACTION is", action)
-            #     print("LEGAL ACTIONS")
-            #     for a in actions:
-            #         print(a)
-            # if action is None:
-            #     print("NO ACTIONS")
-            #     action = random.choice(actions)
         except Exception:
             print("ERROR MY ACTION is", action)
             print("LEGAL ACTIONS")
@@ -1099,6 +1093,7 @@ class myAgent:
         return action
 
     def SelectActionDB(self, actions, game_state):
+        start_time = time.time()
         self.extract_info(game_state)
         root_state = myState(
             self.id,
@@ -1117,7 +1112,7 @@ class myAgent:
             None
         )
         self.search_tree.set_root(root_node)
-        self.search_tree.search(1)
+        self.search_tree.search(1, start_time)
         best_action1, v1 = self.search_tree.get_best_action()
         if actions[0].get("type") == "trade":
             if not best_action1.get("type").startswith("trade"):
