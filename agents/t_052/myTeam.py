@@ -115,7 +115,6 @@ class BoardEvaluator:
                     res = float("inf")
                 res += 2.718 ** v
             return res
-        weight_fn = exp_weight
 
         def heart_weight(my, op):
             # 硬编码所有 (my, op) → (place, remove)
@@ -139,6 +138,7 @@ class BoardEvaluator:
             }
             return table[(my, op)]
 
+        # 计算每个玩家的位置价值
         for player in [0, 1]:
             for r in range(10):
                 for c in range(10):
@@ -148,8 +148,8 @@ class BoardEvaluator:
                         pos_weight[0][r][c] = 1
                         place_4 = values[player]['place'][:, r, c]
                         block_4 = values[player]['block'][:, r, c]
-                        place_val = weight_fn(place_4, seq[player])
-                        block_val = weight_fn(block_4, seq[1 - player])
+                        place_val = exp_weight(place_4, seq[player])
+                        block_val = exp_weight(block_4, seq[1 - player])
                         total = (1 + PLACE_BIAS) * place_val + (1 - PLACE_BIAS) * block_val
                         total *= (1 + PLACE_REMOVE_SCALE)
                         combined[player]['place'][r][c] = total
@@ -159,8 +159,8 @@ class BoardEvaluator:
                         pos_weight[player + 1][r][c] = 1
                         remove_4 = values[player]['removal'][:, r, c]
                         override_4 = values[player]['override'][:, r, c]
-                        remove_val = weight_fn(remove_4, seq[1 - player])
-                        override_val = weight_fn(override_4, seq[player])
+                        remove_val = exp_weight(remove_4, seq[1 - player])
+                        override_val = exp_weight(override_4, seq[player])
                         total = (1 + REMOVE_BIAS) * remove_val + (1 - REMOVE_BIAS) * override_val
                         total *= (1 - PLACE_REMOVE_SCALE)
                         combined[player]['remove'][r][c] = total
@@ -182,6 +182,7 @@ class BoardEvaluator:
             combined[1]['place'] += POSITION_WEIGHTS * pos_weight[0]
             combined[0]['remove'] += POSITION_WEIGHTS * pos_weight[1]
             combined[1]['remove'] += POSITION_WEIGHTS * pos_weight[2]
+
         return combined
 
     def evaluate_board(chips):
@@ -483,6 +484,35 @@ class BoardEvaluator:
             pos_queue.append((new_x, new_y))
             right += 1
 
+    # Two eyed jacks can be placed anywhere EMPTY
+    def get_two_eyed_pos(chips):
+        res = []
+        for i in range(10):
+            for j in range(10):
+                if (i, j) in COORDS['jk']:
+                    continue
+                elif chips[i][j] == EMPTY:
+                    res.append((i, j))
+        return res
+
+    # One eyed jacks can remove one opponent's chip
+    def get_one_eyed_pos(chips, oc):
+        res = []
+        for i in range(10):
+            for j in range(10):
+                if (i, j) in COORDS['jk']:
+                    continue
+                elif chips[i][j] == oc:
+                    res.append((i, j))
+        return res
+
+    # Normal cards can be placed into its position when EMPTY
+    def get_normal_pos(chips, card):
+        res = []
+        for (i, j) in COORDS[card]:
+            if chips[i][j] == EMPTY:
+                res.append((i, j))
+        return res
 
 class Node:
     """
@@ -513,8 +543,9 @@ class Node:
                 self.untried_actions = list(self.state.available_actions)
             else:
                 self.untried_actions = []
-            # 使用A*启发式进行排序（越小越优先）
-            self.untried_actions.sort(key=lambda a: Node.heuristic(self.state, a))
+
+            # 使用融合启发式排序（利用BoardEvaluator的评估）
+            self.untried_actions.sort(key=lambda a: Node.hybrid_heuristic(self.state, a))
         return self.untried_actions
 
     def is_fully_expanded(self):
@@ -525,7 +556,7 @@ class Node:
         Selection (MCTS stage 1)
     """
     def select_child(self):
-        """使用UCB公式选择最有希望的子节点"""
+        """使用UCB公式选择最有希望的子节点,整合BoardEvaluator评估"""
         best_score = float('-inf')
         best_child = None
 
@@ -534,11 +565,12 @@ class Node:
             if child.visits == 0:
                 score = float('inf')
             else:
-                # 结合A*启发式的UCB计算
+                # 结合A*&BoardEvaluator的UCB计算
                 exploitation = child.value / child.visits
                 exploration = EXPLORATION_WEIGHT * math.sqrt(2 * math.log(self.visits) / child.visits)
-                # 启发式调整
+                # 结合BoardEvaluator的启发式调整
                 if child.action:
+                    # 获取BoardEvaluator的评估作为调整因子
                     heuristic_factor = 1.0 / (1.0 + Node.heuristic(self.state, child.action) / 100)
                 else:
                     heuristic_factor = 1.0
@@ -556,13 +588,13 @@ class Node:
         Expansion (MCTS stage 2)
     """
     def expand(self, agent):
-        """扩展一个新子节点，使用A*启发式选择最有前途的动作"""
+        """扩展一个新子节点，使用混合启发式选择最有前途的动作"""
         untried = self.get_untried_actions()
 
         if not untried:
             return None
 
-        # 选择（并移除）列表中第一个动作（已通过启发式排序）
+        # 选择（并移除）列表中第一个动作（已通过混合启发式排序）
         action = untried.pop(0)
         # 创建新状态
         new_state = agent.fast_simulate(self.state, action)
@@ -582,238 +614,158 @@ class Node:
     """
     @staticmethod
     def heuristic(state, action):
-        """A*启发式函数 -评估动作的潜在价值（越低越好)"""
-        if action.get('type') != 'place' or 'coords' not in action:
-            return 100  # 非放置动作或无坐标
+        """A* + BoardEvaluator启发式函数 -评估动作的潜在价值（越低越好)"""
+        if action.get('type') != 'place' and action.get('type') != 'remove' or 'coords' not in action:
+            return 100  # 非放置/移除动作或无坐标
 
         r, c = action['coords']
         if (r, c) in CORNERS:
             return 100  # 角落位置
 
         board = state.board.chips
+        values = BoardEvaluator.combine_value(board)
 
-        # 获取玩家颜色
+        # 获取当前玩家ID
         if hasattr(state, 'my_color'):
-            color = state.my_color
-            enemy = state.opp_color
+            player_id = 0 if state.my_color == RED else 1
         else:
-            # 从行动中推断颜色
-            agent_id = state.current_player_id if hasattr(state, 'current_player_id') else 0
-            color = state.agents[agent_id].colour
-            enemy = 'r' if color == 'b' else 'b'
+            player_id = state.current_player_id if hasattr(state, 'current_player_id') else 0
 
-        # 创建假设放置后的棋盘
-        board_copy = [row[:] for row in board]
-        board_copy[r][c] = color
+        # 根据动作类型获取评分
+        if action.get('type') == 'place':
+            # BoardEvaluator的放置评分
+            score = values[player_id]['place'][r][c]
+        else:  # 移除动作
+            # BoardEvaluator的移除评分
+            score = values[player_id]['remove'][r][c]
 
-        # 计算各种分数
-        score = 0
+        # 为防止除零，加1后取倒数，并放大为0-100的评分范围
+        # 高价值动作会得到低启发式分数
+        return max(1, 1000 / (score + 1))
 
-        # 中心偏好
-        distance = abs(r - 4.5) + abs(c - 4.5)
-        score += max(0, 5 - distance) * 2
-
-        # 连续链评分
-        for dx, dy in [(0, 1), (1, 0), (1, 1), (1, -1)]:
-            count = 1  # 当前位置
-            # 正向检查
-            for i in range(1, 5):
-                x, y = r + dx * i, c + dy * i
-                if 0 <= x < 10 and 0 <= y < 10 and board_copy[x][y] == color:
-                    count += 1
-                else:
-                    break
-            # 反向检查
-            for i in range(1, 5):
-                x, y = r - dx * i, c - dy * i
-                if 0 <= x < 10 and 0 <= y < 10 and board_copy[x][y] == color:
-                    count += 1
-                else:
-                    break
-
-            # 根据连续长度评分
-            if count >= 5:
-                score += 200  # 形成序列
-            elif count == 4:
-                score += 100
-            elif count == 3:
-                score += 30
-            elif count == 2:
-                score += 10
-
-        # 阻止对手评分
-        for dx, dy in [(0, 1), (1, 0), (1, 1), (1, -1)]:
-            enemy_chain = 0
-
-            # 检查移除此位置是否会破坏对手的连续链
-            for i in range(1, 5):
-                x, y = r + dx * i, c + dy * i
-                if 0 <= x < 10 and 0 <= y < 10 and board[x][y] == enemy:
-                    enemy_chain += 1
-                else:
-                    break
-
-            for i in range(1, 5):
-                x, y = r - dx * i, c - dy * i
-                if 0 <= x < 10 and 0 <= y < 10 and board[x][y] == enemy:
-                    enemy_chain += 1
-                else:
-                    break
-
-            if enemy_chain >= 3:
-                score += 50  # 高优先级阻断
-
-        # 中心控制评分
-        heart_controlled = sum(1 for x, y in HEART_COORDS if board_copy[x][y] == color)
-        score += heart_controlled * 15
-
-        # 转换为启发式分数（越低越好）
-        return 100 - score
+        # # 创建假设放置后的棋盘
+        # board_copy = [row[:] for row in board]
+        # board_copy[r][c] = color
+        #
+        # # 计算各种分数
+        # score = 0
+        #
+        # # 中心偏好
+        # distance = abs(r - 4.5) + abs(c - 4.5)
+        # score += max(0, 5 - distance) * 2
+        #
+        # # 连续链评分
+        # for dx, dy in [(0, 1), (1, 0), (1, 1), (1, -1)]:
+        #     count = 1  # 当前位置
+        #     # 正向检查
+        #     for i in range(1, 5):
+        #         x, y = r + dx * i, c + dy * i
+        #         if 0 <= x < 10 and 0 <= y < 10 and board_copy[x][y] == color:
+        #             count += 1
+        #         else:
+        #             break
+        #     # 反向检查
+        #     for i in range(1, 5):
+        #         x, y = r - dx * i, c - dy * i
+        #         if 0 <= x < 10 and 0 <= y < 10 and board_copy[x][y] == color:
+        #             count += 1
+        #         else:
+        #             break
+        #
+        #     # 根据连续长度评分
+        #     if count >= 5:
+        #         score += 200  # 形成序列
+        #     elif count == 4:
+        #         score += 100
+        #     elif count == 3:
+        #         score += 30
+        #     elif count == 2:
+        #         score += 10
+        #
+        # # 阻止对手评分
+        # for dx, dy in [(0, 1), (1, 0), (1, 1), (1, -1)]:
+        #     enemy_chain = 0
+        #
+        #     # 检查移除此位置是否会破坏对手的连续链
+        #     for i in range(1, 5):
+        #         x, y = r + dx * i, c + dy * i
+        #         if 0 <= x < 10 and 0 <= y < 10 and board[x][y] == enemy:
+        #             enemy_chain += 1
+        #         else:
+        #             break
+        #
+        #     for i in range(1, 5):
+        #         x, y = r - dx * i, c - dy * i
+        #         if 0 <= x < 10 and 0 <= y < 10 and board[x][y] == enemy:
+        #             enemy_chain += 1
+        #         else:
+        #             break
+        #
+        #     if enemy_chain >= 3:
+        #         score += 50  # 高优先级阻断
+        #
+        # # 中心控制评分
+        # heart_controlled = sum(1 for x, y in HEART_COORDS if board_copy[x][y] == color)
+        # score += heart_controlled * 15
+        #
+        # # 转换为启发式分数（越低越好）
+        # return 100 - score
 
     """
         Evaluation (MCTS stage 4)
     """
     @staticmethod
     def evaluate(state, last_action=None):
-        """评估游戏状态的价值"""
+        """使用BoardEvaluator对局面进行全面评估"""
         board = state.board.chips
 
-        # 获取玩家颜色
+        # 获取当前玩家ID
         if hasattr(state, 'my_color'):
-            my_color = state.my_color
-            opp_color = state.opp_color
+            player_id = 0 if state.my_color == RED else 1
+            opponent_id = 1 - player_id
         else:
-            # 从状态中推断颜色
-            agent_id = state.current_player_id if hasattr(state, 'current_player_id') else 0
-            my_color = state.agents[agent_id].colour
-            opp_color = 'r' if my_color == 'b' else 'b'
+            player_id = state.current_player_id if hasattr(state, 'current_player_id') else 0
+            opponent_id = 1 - player_id
 
-        # 1. 位置评分
-        position_score = 0
-        for i in range(10):
-            for j in range(10):
-                if board[i][j] == my_color:
-                    # 位置权重
-                    if (i, j) in HEART_COORDS:
-                        position_score += 1.5  # 中心位置
-                    elif i in [0, 9] or j in [0, 9]:
-                        position_score += 0.8  # 边缘位置
-                    else:
-                        position_score += 1.0  # 其他位置
+        # 使用BoardEvaluator的综合评估
+        values = BoardEvaluator.combine_value(board)
 
-                elif board[i][j] == opp_color:
-                    # 对手的位置，负分
-                    if (i, j) in HEART_COORDS:
-                        position_score -= 1.5
-                    elif i in [0, 9] or j in [0, 9]:
-                        position_score -= 0.8
-                    else:
-                        position_score -= 1.0
+        # 分别计算己方和对方的位置平均价值
+        my_place_avg = np.mean(values[player_id]['place'])
+        my_remove_avg = np.mean(values[player_id]['remove'])
+        opp_place_avg = np.mean(values[opponent_id]['place'])
+        opp_remove_avg = np.mean(values[opponent_id]['remove'])
 
-        # 2. 序列潜力评分
-        sequence_score = 0
-        for i in range(10):
-            for j in range(10):
-                if board[i][j] == my_color:
-                    for dx, dy in [(0, 1), (1, 0), (1, 1), (1, -1)]:
-                        # 计算连续长度
-                        my_count = Node._count_consecutive(board, i, j, dx, dy, my_color)
+        # 计算总体优势分数
+        my_score = my_place_avg + my_remove_avg
+        opp_score = opp_place_avg + opp_remove_avg
 
-                        # 指数增长的序列得分
-                        if my_count >= 5:
-                            sequence_score += 100  # 形成序列
-                        elif my_count == 4:
-                            sequence_score += 20
-                        elif my_count == 3:
-                            sequence_score += 5
-                        elif my_count == 2:
-                            sequence_score += 1
+        # 心脏区域特殊加分
+        heart_values, (red_heart, blue_heart) = BoardEvaluator.evaluate_board(board)
+        if player_id == 0:  # 红方
+            heart_diff = red_heart - blue_heart
+        else:  # 蓝方
+            heart_diff = blue_heart - red_heart
 
-        # 3. 防御评分 - 阻止对手的序列
-        defense_score = 0
-        for i in range(10):
-            for j in range(10):
-                if board[i][j] == opp_color:
-                    for dx, dy in [(0, 1), (1, 0), (1, 1), (1, -1)]:
-                        opp_count = Node._count_consecutive(board, i, j, dx, dy, opp_color)
+        heart_bonus = heart_diff * 5  # 心脏控制加分
 
-                        # 对手序列威胁得分（负面）
-                        if opp_count >= 4:
-                            defense_score -= 50  # 高度威胁
-                        elif opp_count == 3:
-                            defense_score -= 10
+        # 连续棋子价值计算
+        line_values, _ = BoardEvaluator.evaluate_board(board)
+        line_score = 0
+        for i in range(1, 6):
+            line_score += line_values[player_id][i] * (2 ** i)  # 指数加权
+            line_score -= line_values[opponent_id][i] * (2 ** i)  # 对手减分
 
-        # 4. 中心控制评分
-        heart_score = 0
-        for x, y in HEART_COORDS:
-            if board[x][y] == my_color:
-                heart_score += 5
-            elif board[x][y] == opp_color:
-                heart_score -= 5
+        # 综合得分，归一化到[-1, 1]区间
+        total_advantage = my_score - opp_score + heart_bonus + line_score * 0.1
+        normalized_score = max(-1, min(1, total_advantage / 200))
 
-        # 5. 综合评分
-        total_score = position_score + sequence_score + defense_score + heart_score
-
-        # 归一化到[-1, 1]区间
-        return max(-1, min(1, total_score / 200))
-
-    @staticmethod
-    def _count_consecutive(board, x, y, dx, dy, color):
-        """计算从(x,y)出发，在方向(dx,dy)上颜色为color的最长连续序列"""
-        count = 1  # 起始位置算一个
-
-        # 正向检查
-        for i in range(1, 5):
-            nx, ny = x + i * dx, y + i * dy
-            if 0 <= nx < 10 and 0 <= ny < 10 and board[nx][ny] == color:
-                count += 1
-            else:
-                break
-
-        # 反向检查
-        for i in range(1, 5):
-            nx, ny = x - i * dx, y - i * dy
-            if 0 <= nx < 10 and 0 <= ny < 10 and board[nx][ny] == color:
-                count += 1
-            else:
-                break
-
-        return min(count, 5)  # 最多返回5（形成一个序列）
-
-    # Two eyed jacks can be placed anywhere EMPTY
-    def get_two_eyed_pos(chips):
-        res = []
-        for i in range(10):
-            for j in range(10):
-                if (i, j) in COORDS['jk']:
-                    continue
-                elif chips[i][j] == EMPTY:
-                    res.append((i, j))
-        return res
-
-    # One eyed jacks can remove one opponents chip
-    def get_one_eyed_pos(chips, oc):
-        res = []
-        for i in range(10):
-            for j in range(10):
-                if (i, j) in COORDS['jk']:
-                    continue
-                elif chips[i][j] == oc:
-                    res.append((i, j))
-        return res
-
-    # Normal cards can be placed into its position when EMPTY
-    def get_normal_pos(chips, card):
-        res = []
-        for (i, j) in COORDS[card]:
-            if chips[i][j] == EMPTY:
-                res.append((i, j))
-        return res
+        return normalized_score
 
 
 class myAgent(Agent):
     """
-    智能体 myAgent: 融合MCTS与A*的版本
+    智能体 myAgent: 融合融合BoardEvaluator与MCTS+A*的版本
     """
 
     def __init__(self, _id):
@@ -834,39 +786,102 @@ class myAgent(Agent):
         # 时间控制
         self.start_time = 0
 
+        # 局面复杂度分析
+        self.game_phase = "early"  # early, mid, late
+        self.move_count = 0
+
     def SelectAction(self, actions, game_state):
-        """主决策函数 - 融合A*和MCTS"""
+        """主决策函数 - 结合BoardEvaluator与MCTS+A*"""
         self.start_time = time.time()
+        self.move_count += 1
+
+        # 游戏阶段判断（基于棋盘填充程度）
+        filled_count = 0
+        for r in range(10):
+            for c in range(10):
+                if game_state.board.chips[r][c] not in [EMPTY, JOKER]:
+                    filled_count += 1
+
+        # 根据填充程度确定游戏阶段
+        if filled_count < 20:
+            self.game_phase = "early"
+        elif filled_count < 40:
+            self.game_phase = "mid"
+        else:
+            self.game_phase = "late"
 
         # 初始化颜色信息（如果尚未初始化）
         if self.my_color is None:
             self.my_color = game_state.agents[self.id].colour
             self.opp_color = game_state.agents[1 - self.id].colour
 
-        # 准备一个默认的随机动作作为后备
-        valid_actions = [a for a in actions if 'coords' not in a or a['coords'] not in CORNERS]
-        default_action = random.choice(valid_actions) if valid_actions else random.choice(actions)
-
         # 特殊情况处理：卡牌交易/选择（针对五张展示牌变体）
         if any(a.get('type') == 'trade' for a in actions):
             trade_actions = [a for a in actions if a.get('type') == 'trade']
             return self._select_strategic_card(trade_actions, game_state)
 
-        # 第一阶段：使用A*快速评估和排序动作
-        candidate_actions = self._a_star_filter(actions, game_state)
+        # 准备一个默认的随机动作作为后备
+        valid_actions = [a for a in actions if 'coords' not in a or a['coords'] not in CORNERS]
+        default_action = random.choice(valid_actions) if valid_actions else random.choice(actions)
 
-        # 检查时间
+        # 使用BoardEvaluator对所有动作进行评估
+        board = game_state.board.chips
+        values = BoardEvaluator.combine_value(board)
+
+        # 给所有动作评分
+        scored_actions = []
+        for action in actions:
+            # 不考虑角落位置
+            if action.get('coords') in CORNERS:
+                continue
+
+            if action.get('type') == 'place' and 'coords' in action:
+                r, c = action['coords']
+                score = values[self.id]['place'][r][c]
+                scored_actions.append((action, score))
+            elif action.get('type') == 'remove' and 'coords' in action:
+                r, c = action['coords']
+                score = values[self.id]['remove'][r][c]
+                scored_actions.append((action, score))
+            else:
+                # 其他类型动作（如trade）
+                scored_actions.append((action, 0))
+
+        # 按评分排序（降序）
+        scored_actions.sort(key=lambda x: x[1], reverse=True)
+
+        # 如果没有有效动作，使用默认动作
+        if not scored_actions:
+            return default_action
+
+        # 检查分数差异
+        if len(scored_actions) >= 2:
+            best_score = scored_actions[0][1]
+            second_score = scored_actions[1][1]
+            score_diff = best_score - second_score
+
+            # 如果最佳动作明显优于其他动作，直接返回
+            if score_diff > 100 or best_score > 1000:
+                return scored_actions[0][0]
+
+        # 简单局面和早期阶段：只使用BoardEvaluator
+        if self.game_phase == "early" or len(actions) < 5:
+            return scored_actions[0][0]
+
+        # 检查剩余时间
         remaining_time = MAX_THINK_TIME - (time.time() - self.start_time)
-        if remaining_time < 0.3:
-            # 时间不足，直接返回A*的最佳动作
-            return candidate_actions[0] if candidate_actions else default_action
+        if remaining_time < 0.4:  # 时间不足时直接使用BoardEvaluator
+            return scored_actions[0][0]
 
-        # 第二阶段：使用MCTS深度分析候选动作
+        # 筛选候选动作（当动作太多时，只使用前N个）
+        candidate_actions = [a for a, _ in scored_actions[:self.candidate_limit]]
+
+        # 复杂局面：使用MCTS深度分析
         try:
-            return self._mcts_search(candidate_actions, game_state)
+            return self._hybrid_mcts_search(candidate_actions, game_state)
         except Exception as e:
-            # 出错时返回A*的结果或默认动作
-            return candidate_actions[0] if candidate_actions else default_action
+            # 出错时返回BoardEvaluator的最佳动作
+            return scored_actions[0][0]
 
     def _a_star_filter(self, actions, game_state):
         """使用A*算法筛选最有前途的动作"""
@@ -888,8 +903,8 @@ class myAgent(Agent):
         candidates = [a for a, _ in scored_actions[:self.candidate_limit]]
         return candidates
 
-    def _mcts_search(self, candidate_actions, game_state):
-        """使用MCTS分析候选动作"""
+    def _hybrid_mcts_search(self, candidate_actions, game_state):
+        """混合MCTS搜索，使用BoardEvaluator增强的评估和模拟"""
         # 准备MCTS状态
         mcts_state = self._prepare_state_for_mcts(game_state, candidate_actions)
         root = Node(mcts_state)
@@ -917,23 +932,45 @@ class myAgent(Agent):
                     node = child
 
             # 3. 模拟阶段
-            value = self._a_star_guided_simulate(node.state)
+            value = self._hybrid_simulate(node.state)
 
             # 4. 回溯阶段
             while node:
                 node.update(value)
                 node = node.parent
 
-        # 选择最佳动作（访问次数最多的子节点）
+        # 检查是否有足够的迭代
+        if iterations < 10:  # 如果模拟次数太少，直接使用第一个动作
+            return candidate_actions[0]
+
+        # 选择最佳动作（综合访问次数和平均价值）
         if not root.children:
-            return candidate_actions[0] if candidate_actions else None
+            return candidate_actions[0]
 
-        # 选择访问次数最多的子节点
-        best_child = max(root.children, key=lambda c: c.visits)
-        return best_child.action
+        # 使用加权评分选择最佳子节点
+        best_child = None
+        best_score = float('-inf')
 
-    def _a_star_guided_simulate(self, state):
-        """A*引导的MCTS模拟"""
+        for child in root.children:
+            if child.visits == 0:
+                continue
+
+            # 结合访问次数和平均值的评分
+            visit_score = child.visits / max(1, iterations) * 0.7  # 访问比例 (70% 权重)
+            value_score = (child.value / child.visits + 1) / 2 * 0.3  # 归一化值 (30% 权重)
+            score = visit_score + value_score
+
+            if score > best_score:
+                best_score = score
+                best_child = child
+
+        if best_child:
+            return best_child.action
+        else:
+            return candidate_actions[0]
+
+    def _hybrid_simulate(self, state):
+        """混合模拟"""
         state_copy = self.custom_shallow_copy(state)
         current_depth = 0
 
@@ -952,23 +989,48 @@ class myAgent(Agent):
             if not actions:
                 break
 
-            # 80%概率使用启发式，20%随机选择
-            if random.random() < 0.8:
-                # 使用启发式选择动作
-                scored_actions = [(a, Node.heuristic(state_copy, a)) for a in actions]
-                scored_actions.sort(key=lambda x: x[1])
-                action = scored_actions[0][0] if scored_actions else random.choice(actions)
+            # 使用BoardEvaluator评估所有可能的动作
+            board = state_copy.board.chips
+            values = BoardEvaluator.combine_value(board)
+
+            # 获取当前玩家ID
+            player_id = state_copy.current_player_id if hasattr(state_copy, 'current_player_id') else self.id
+
+            # 评估每个动作
+            scored_actions = []
+            for action in actions:
+                # 根据动作类型分别评分
+                if action.get('type') == 'place' and 'coords' in action:
+                    r, c = action['coords']
+                    score = values[player_id]['place'][r][c]
+                elif action.get('type') == 'remove' and 'coords' in action:
+                    r, c = action['coords']
+                    score = values[player_id]['remove'][r][c]
+                else:
+                    score = 0
+                scored_actions.append((action, score))
+
+            # 90%时间选择高价值动作，10%时间随机选择（保持探索性）
+            if random.random() < 0.9 and scored_actions:
+                # 将动作按价值排序
+                scored_actions.sort(key=lambda x: x[1], reverse=True)
+
+                # 避免总是选最优，从前三个中随机选择增加多样性
+                top_n = min(3, len(scored_actions))
+                idx = random.randint(0, top_n - 1) if top_n > 0 else 0
+                action = scored_actions[idx][0] if idx < len(scored_actions) else random.choice(actions)
             else:
+                # 10%随机选择
                 action = random.choice(actions)
 
             # 应用动作
             state_copy = self.fast_simulate(state_copy, action)
 
-            # 模拟卡牌选择（专门针对5张展示牌变体）
+            # 模拟卡牌选择（针对5张展示牌变体）
             self._simulate_card_selection(state_copy)
 
-        # 评估最终状态
-        return Node.evaluate(state_copy)
+        # 使用混合评估函数评估最终状态
+        return Node.hybrid_evaluate(state_copy)
 
     def _simulate_card_selection(self, state):
         """模拟从5张展示牌中选择一张"""
@@ -977,6 +1039,10 @@ class myAgent(Agent):
             # 评估每张牌的价值
             best_card = None
             best_value = float('-inf')
+
+            # 获取当前棋盘
+            board = state.board.chips
+            player_id = state.current_player_id if hasattr(state, 'current_player_id') else self.id
 
             for card in state.display_cards:
                 value = self._evaluate_card(card, state)
@@ -1001,42 +1067,40 @@ class myAgent(Agent):
                 if hasattr(state, 'deck') and state.deck:
                     state.display_cards.append(state.deck.pop(0))
 
-    def _evaluate_card(self, card, state):
-        """评估卡牌在当前状态下的价值"""
-        # J牌有特殊价值
-        try:
-            card_str = str(card).lower()
-            if card_str[0] == 'j':
-                if card_str[1] in ['h', 's']:  # 单眼J
-                    return 10  # 高价值
-                elif card_str[1] in ['d', 'c']:  # 双眼J
-                    return 8  # 高价值
-        except:
-            pass
+    def _evaluate_card(self, card, state, board=None, player_id=None):
+        """增强版卡牌评估，结合棋盘位置价值和卡牌特性"""
+        # 如果没有提供棋盘和玩家ID，则获取它们
+        if board is None:
+            board = state.board.chips
+        if player_id is None:
+            player_id = self.id
 
-        # 对于普通牌，评估它可以放置的位置价值
-        value = 0
-        try:
-            # 检查该卡对应的位置
-            if card in COORDS:
-                positions = COORDS[card]
-                for pos in positions:
-                    r, c = pos
-                    # 检查位置是否为空
-                    if state.board.chips[r][c] == 0:
-                        # 位置评估
-                        pos_value = 0
-                        # 中心附近加分
-                        distance = abs(r - 4.5) + abs(c - 4.5)
-                        pos_value += max(0, 5 - distance)
-                        value += pos_value
+        # 使用BoardEvaluator计算棋盘价值
+        board_values = BoardEvaluator.combine_value(board)
 
-                # 平均到所有位置
-                value = value / max(1, len(positions))
-        except:
-            pass
+        # 检查特殊牌：Jack牌
+        card_str = str(card).lower()
+        if card_str[0] == 'j':
+            if card_str[1] in ['h', 's']:  # 单眼J牌
+                # 获取移除价值最高的位置
+                max_remove_value = np.max(board_values[player_id]['remove'])
+                return max_remove_value + 50  # 额外加分
+            elif card_str[1] in ['d', 'c']:  # 双眼J牌
+                # 获取放置价值最高的位置
+                max_place_value = np.max(board_values[player_id]['place'])
+                return max_place_value + 30  # 额外加分
 
-        return value
+        # 普通牌：分析它能放置的位置价值
+        max_value = 0
+        if card in COORDS:
+            positions = COORDS[card]
+            # 检查卡牌对应位置的价值
+            for r, c in positions:
+                if board[r][c] == EMPTY:  # 位置为空才能放置
+                    pos_value = board_values[player_id]['place'][r][c]
+                    max_value = max(max_value, pos_value)
+
+        return max_value
 
     def _select_strategic_card(self, trade_actions, game_state):
         """策略性地选择卡牌"""
@@ -1045,27 +1109,38 @@ class myAgent(Agent):
             best_card = None
             best_value = float('-inf')
 
+            # 获取当前棋盘状态
+            board = game_state.board.chips
+
             for card in game_state.display_cards:
-                value = self._evaluate_card(card, game_state)
+                value = self._evaluate_card(card, game_state, board)
                 if value > best_value:
                     best_value = value
                     best_card = card
 
             # 寻找对应的动作
-            for action in trade_actions:
-                if action.get('draft_card') == best_card:
-                    return action
+            if best_card:
+                for action in trade_actions:
+                    if action.get('draft_card') == best_card:
+                        return action
 
-        # 默认选择：优先J牌
+        # 备选策略：优先选择Jack牌
+        jack_actions = []
         for action in trade_actions:
             card = action.get('draft_card', '')
-            try:
-                if card[0].lower() == 'j':
-                    return action
-            except:
-                pass
+            card_str = str(card).lower()
+            if card_str and card_str[0] == 'j':
+                if card_str[1] in ['h', 's']:  # 单眼J
+                    jack_actions.append((action, 10))  # 最高优先级
+                elif card_str[1] in ['d', 'c']:  # 双眼J
+                    jack_actions.append((action, 8))  # 次高优先级
 
-        # 随机选择一个动作
+        # 如果有Jack牌，按优先级选择
+        if jack_actions:
+            jack_actions.sort(key=lambda x: x[1], reverse=True)
+            return jack_actions[0][0]
+
+            # 最后备选：随机选择
         return random.choice(trade_actions)
 
     def _prepare_state_for_mcts(self, game_state, actions):
@@ -1102,7 +1177,19 @@ class myAgent(Agent):
                         new_state.agents[self.id].hand.remove(card)
                     except:
                         pass
-
+        # 处理移除动作
+        elif action['type'] == 'remove' and 'coords' in action:
+            r, c = action['coords']
+            # 移除棋子
+            new_state.board.chips[r][c] = EMPTY
+            # 更新手牌
+            if hasattr(new_state, 'agents') and hasattr(new_state.agents[self.id], 'hand'):
+                if 'play_card' in action:
+                    card = action['play_card']
+                    try:
+                        new_state.agents[self.id].hand.remove(card)
+                    except:
+                        pass
         return new_state
 
     def custom_shallow_copy(self, state):
