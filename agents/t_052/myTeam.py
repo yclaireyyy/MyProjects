@@ -42,14 +42,14 @@ PLACE_REMOVE_SCALE = -0.2
 PLACE_BIAS = 0.2
 REMOVE_BIAS = 0.4
 SMOOTH = 0.1
-SCALE = 10
+SCALE = 11
 x = np.arange(10).reshape(-1, 1)
 y = np.arange(10).reshape(1, -1)
 z = (x - 4.5) ** 2 + (y - 4.5) ** 2
 POSITION_WEIGHTS = np.exp(-SMOOTH * z)
 POSITION_WEIGHTS *= SCALE
 
-HEART_PRE_BIAS = 0
+HEART_PRE_BIAS = 0.5
 POSITION_WEIGHTS[HEART_POS] += HEART_PRE_BIAS
 
 
