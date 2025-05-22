@@ -79,6 +79,68 @@ class BoardEvaluator:
         if (dx, dy) == (1, -1): return 3
         return -1
 
+    @staticmethod
+    def _detect_immediate_threats(board, my_color, opp_color):
+        threats = []
+
+        for r in range(10):
+            for c in range(10):
+                if board[r][c] == EMPTY:
+                    threat_level = BoardEvaluator._evaluate_position_threat(
+                        board, r, c, opp_color
+                    )
+                    if threat_level >= 3:
+                        threats.append((r, c, threat_level))
+
+        threats.sort(key=lambda x: x[2], reverse=True)
+        return threats
+
+    @staticmethod
+    def _evaluate_position_threat(board, r, c, color):
+        """评估位置威胁等级"""
+        max_threat = 0
+
+        for dx, dy in [(0, 1), (1, 0), (1, 1), (1, -1)]:
+            count = 1
+
+            # 正向
+            for i in range(1, 5):
+                nr, nc = r + dx * i, c + dy * i
+                if (0 <= nr < 10 and 0 <= nc < 10 and
+                        board[nr][nc] in [color, color.upper()]):
+                    count += 1
+                else:
+                    break
+
+            # 反向
+            for i in range(1, 5):
+                nr, nc = r - dx * i, c - dy * i
+                if (0 <= nr < 10 and 0 <= nc < 10 and
+                        board[nr][nc] in [color, color.upper()]):
+                    count += 1
+                else:
+                    break
+
+            max_threat = max(max_threat, min(count, 5))
+
+        return max_threat
+
+    @staticmethod
+    def _get_defensive_actions(threats, actions):
+        """获取防守动作"""
+        defensive_actions = []
+        threat_positions = {(r, c): level for r, c, level in threats}
+
+        for action in actions:
+            if action.get('type') in ['place', 'remove'] and 'coords' in action:
+                coords = action['coords']
+                if coords in threat_positions:
+                    threat_level = threat_positions[coords]
+                    defensive_actions.append((action, threat_level))
+
+        defensive_actions.sort(key=lambda x: x[1], reverse=True)
+        return [action for action, _ in defensive_actions]
+
     # 将分方向的原始动作值整合为放置类（空格）和移除类（one-eyed jack）两种整合价值。
     #
     # 参数:
@@ -183,6 +245,18 @@ class BoardEvaluator:
             combined[0]['remove'] += POSITION_WEIGHTS * pos_weight[1]
             combined[1]['remove'] += POSITION_WEIGHTS * pos_weight[2]
 
+        # 为红方检测蓝方威胁
+        red_threats = BoardEvaluator._detect_immediate_threats(chips, RED, BLU)
+        for r, c, level in red_threats:
+            if level >= 4:  # 高威胁
+                combined[0]['place'][r][c] += level * 500  # 大幅提升防守价值
+
+        # 为蓝方检测红方威胁
+        blue_threats = BoardEvaluator._detect_immediate_threats(chips, BLU, RED)
+        for r, c, level in blue_threats:
+            if level >= 4:  # 高威胁
+                combined[1]['place'][r][c] += level * 500  # 大幅提升防守价值
+
         return combined
 
     @staticmethod
@@ -221,6 +295,9 @@ class BoardEvaluator:
     #     (max_red, max_blue): 双方在该线段中的最大连子数
     @staticmethod
     def evaluate_line_max_streak(chips, x_start, y_start, length, dx, dy):
+        if length < 5:
+            return 0, 0
+
         counts = {
             RED: 0, RED_SEQ: 0,
             BLU: 0, BLU_SEQ: 0,
@@ -235,6 +312,10 @@ class BoardEvaluator:
         for i in range(5):
             x = x_start + i * dx
             y = y_start + i * dy
+
+            if not (0 <= x < 10 and 0 <= y < 10):
+                return 0, 0
+
             c = chips[x][y]
             counts[c] += 1
             pos_queue.append((x, y))
@@ -259,17 +340,25 @@ class BoardEvaluator:
             # 滑出窗口头
             old_x = x_start + left * dx
             old_y = y_start + left * dy
-            old = chips[old_x][old_y]
-            counts[old] -= 1
+
+            if 0 <= old_x < 10 and 0 <= old_y < 10:
+                old = chips[old_x][old_y]
+                counts[old] -= 1
+
             pos_queue.popleft()
             left += 1
 
             # 滑入窗口尾
             new_x = x_start + right * dx
             new_y = y_start + right * dy
-            new = chips[new_x][new_y]
-            counts[new] += 1
-            pos_queue.append((new_x, new_y))
+
+            if 0 <= new_x < 10 and 0 <= new_y < 10:
+                new = chips[new_x][new_y]
+                counts[new] += 1
+                pos_queue.append((new_x, new_y))
+            else:
+                break
+
             right += 1
 
         return max_red, max_blue
@@ -350,8 +439,11 @@ class BoardEvaluator:
         for i in range(5):
             x = x_start + i * dx
             y = y_start + i * dy
-            c = chips[x][y]
 
+            if not (0 <= x < 10 and 0 <= y < 10):
+                return
+
+            c = chips[x][y]
             counts[c] += 1
             pos_queue.append((x, y))
 
@@ -473,25 +565,36 @@ class BoardEvaluator:
             # 滑动窗口
             old_x = x_start + left * dx
             old_y = y_start + left * dy
-            old = chips[old_x][old_y]
-            counts[old] -= 1
+
+            # 检查要移除的坐标
+            if 0 <= old_x < 10 and 0 <= old_y < 10:
+                old = chips[old_x][old_y]
+                counts[old] -= 1
+
             pos_queue.popleft()
             left += 1
 
             new_x = x_start + right * dx
             new_y = y_start + right * dy
-            new = chips[new_x][new_y]
-            counts[new] += 1
-            pos_queue.append((new_x, new_y))
+
+            if 0 <= new_x < 10 and 0 <= new_y < 10:
+                new = chips[new_x][new_y]
+                counts[new] += 1
+                pos_queue.append((new_x, new_y))
+            else:
+                break
+
             right += 1
 
     @staticmethod
     # Two eyed jacks can be placed anywhere EMPTY
     def get_two_eyed_pos(chips):
         res = []
+        corner_positions = COORDS.get('jk', set())
+
         for i in range(10):
             for j in range(10):
-                if (i, j) in COORDS['jk']:
+                if (i, j) in corner_positions:
                     continue
                 elif chips[i][j] == EMPTY:
                     res.append((i, j))
@@ -501,9 +604,11 @@ class BoardEvaluator:
     # One eyed jacks can remove one opponent's chip
     def get_one_eyed_pos(chips, oc):
         res = []
+        corner_positions = COORDS.get('jk', set())
+
         for i in range(10):
             for j in range(10):
-                if (i, j) in COORDS['jk']:
+                if (i, j) in corner_positions:
                     continue
                 elif chips[i][j] == oc:
                     res.append((i, j))
@@ -513,9 +618,10 @@ class BoardEvaluator:
     # Normal cards can be placed into its position when EMPTY
     def get_normal_pos(chips, card):
         res = []
-        for (i, j) in COORDS[card]:
-            if chips[i][j] == EMPTY:
-                res.append((i, j))
+        if card in COORDS:
+            for (i, j) in COORDS[card]:
+                if chips[i][j] == EMPTY:
+                    res.append((i, j))
         return res
 
 class Node:
@@ -636,16 +742,35 @@ class Node:
             player_id = state.current_player_id if hasattr(state, 'current_player_id') else 0
 
         # 根据动作类型获取评分
-        if action.get('type') == 'place':
-            # BoardEvaluator的放置评分
-            score = values[player_id]['place'][r][c]
-        else:  # 移除动作
-            # BoardEvaluator的移除评分
-            score = values[player_id]['remove'][r][c]
+        try:
+            if action.get('type') == 'place':
+                score = values[player_id]['place'][r][c]
+            else:
+                score = values[player_id]['remove'][r][c]
 
-        # 为防止除零，加1后取倒数，并放大为0-100的评分范围
-        # 高价值动作会得到低启发式分数
-        return max(1, 1000 / (score + 1))
+            # 🔥 新增：威胁检测调整
+            # 检查这个动作是否能阻止威胁
+            opp_color = 'b' if player_id == 0 else 'r'
+            my_color = 'r' if player_id == 0 else 'b'
+
+            # 模拟执行动作后的威胁变化
+            test_board = [row[:] for row in board]
+            if action.get('type') == 'place':
+                test_board[r][c] = my_color
+            else:
+                test_board[r][c] = EMPTY
+
+            # 检测威胁变化
+            original_threats = BoardEvaluator._detect_immediate_threats(board, my_color, opp_color)
+            after_threats = BoardEvaluator._detect_immediate_threats(test_board, my_color, opp_color)
+
+            # 如果减少了威胁，降低启发式分数（更优先）
+            if len(after_threats) < len(original_threats):
+                score += 1000  # 大幅提升防守动作的价值
+
+            return max(1, min(1000, 1000 / (score + 1)))
+        except (KeyError, IndexError, TypeError):
+            return 100
 
         # # 创建假设放置后的棋盘
         # board_copy = [row[:] for row in board]
@@ -830,6 +955,30 @@ class myAgent(Agent):
 
         # 使用BoardEvaluator对所有动作进行评估
         board = game_state.board.chips
+
+        immediate_threats = BoardEvaluator._detect_immediate_threats(
+            board, self.my_color, self.opp_color
+        )
+
+        # 如果有5级威胁（对手下一步获胜），立即防守
+        critical_threats = [t for t in immediate_threats if t[2] >= 5]
+        if critical_threats:
+            defensive_actions = BoardEvaluator._get_defensive_actions(critical_threats, actions)
+            if defensive_actions:
+                return defensive_actions[0]
+
+        # 检查自己的获胜机会
+        my_opportunities = BoardEvaluator._detect_immediate_threats(
+            board, self.opp_color, self.my_color  # 注意参数顺序
+        )
+        win_opportunities = [t for t in my_opportunities if t[2] >= 5]
+        if win_opportunities:
+            r, c, _ = win_opportunities[0]
+            for action in actions:
+                if (action.get('type') == 'place' and
+                        action.get('coords') == (r, c)):
+                    return action
+
         values = BoardEvaluator.combine_value(board)
 
         # 给所有动作评分
@@ -993,48 +1142,106 @@ class myAgent(Agent):
             if not actions:
                 break
 
-            # 使用BoardEvaluator评估所有可能的动作
+            # 提前获取当前玩家ID
+            current_player = getattr(state_copy, 'current_player_id', self.id)
+
+            # 提前获取棋盘和评估
             board = state_copy.board.chips
             values = BoardEvaluator.combine_value(board)
 
-            # 获取当前玩家ID
-            player_id = state_copy.current_player_id if hasattr(state_copy, 'current_player_id') else self.id
-
-            # 评估每个动作
+            # 统一的动作选择逻辑
             scored_actions = []
-            for action in actions:
-                # 根据动作类型分别评分
-                if action.get('type') == 'place' and 'coords' in action:
-                    r, c = action['coords']
-                    score = values[player_id]['place'][r][c]
-                elif action.get('type') == 'remove' and 'coords' in action:
-                    r, c = action['coords']
-                    score = values[player_id]['remove'][r][c]
+
+            if current_player == self.id:
+                # 我的回合：优先防守
+                my_threats = BoardEvaluator._detect_immediate_threats(
+                    board, self.my_color, self.opp_color
+                )
+                critical_threats = [t for t in my_threats if t[2] >= 4]
+
+                if critical_threats:
+                    # 有威胁，优先防守
+                    defensive_actions = BoardEvaluator._get_defensive_actions(critical_threats, actions)
+                    if defensive_actions:
+                        action = random.choice(defensive_actions[:3])
+                    else:
+                        action = random.choice(actions)
+                    # 直接选择防守动作，跳过后续评估
                 else:
-                    score = 0
-                scored_actions.append((action, score))
+                    # 没有威胁，正常评估
+                    for act in actions:
+                        if act.get('type') == 'place' and 'coords' in act:
+                            r, c = act['coords']
+                            score = values[self.id]['place'][r][c]
+                        elif act.get('type') == 'remove' and 'coords' in act:
+                            r, c = act['coords']
+                            score = values[self.id]['remove'][r][c]
+                        else:
+                            score = 0
+                        scored_actions.append((act, score))
 
-            # 90%时间选择高价值动作，10%时间随机选择（保持探索性）
-            if random.random() < 0.9 and scored_actions:
-                # 将动作按价值排序
-                scored_actions.sort(key=lambda x: x[1], reverse=True)
-
-                # 避免总是选最优，从前三个中随机选择增加多样性
-                top_n = min(3, len(scored_actions))
-                idx = random.randint(0, top_n - 1) if top_n > 0 else 0
-                action = scored_actions[idx][0] if idx < len(scored_actions) else random.choice(actions)
+                    # 选择动作的逻辑移到后面统一处理
+                    action = None  # 标记需要后续选择
             else:
-                # 10%随机选择
+                # 对手回合也进行智能评估
+                opp_id = 1 - self.id
+
+                # 检查对手的获胜机会
+                opp_opportunities = BoardEvaluator._detect_immediate_threats(
+                    board, self.opp_color, self.my_color
+                )
+                winning_opportunities = [t for t in opp_opportunities if t[2] >= 5]
+
+                if winning_opportunities and random.random() < 0.8:
+                    # 80%概率对手会抓住获胜机会
+                    r, c, _ = winning_opportunities[0]
+                    attack_actions = [a for a in actions
+                                      if a.get('coords') == (r, c) and a.get('type') == 'place']
+                    if attack_actions:
+                        action = attack_actions[0]
+                    else:
+                        action = random.choice(actions)
+                else:
+                    # 对手正常评估动作
+                    for act in actions:
+                        if act.get('type') == 'place' and 'coords' in act:
+                            r, c = act['coords']
+                            score = values[opp_id]['place'][r][c]
+                        elif act.get('type') == 'remove' and 'coords' in act:
+                            r, c = act['coords']
+                            score = values[opp_id]['remove'][r][c]
+                        else:
+                            score = 0
+                        scored_actions.append((act, score))
+
+                    action = None  # 标记需要后续选择
+
+            # 统一的动作选择逻辑
+            if action is None and scored_actions:
+                # 90%时间选择高价值动作，10%时间随机选择
+                if random.random() < 0.9:
+                    scored_actions.sort(key=lambda x: x[1], reverse=True)
+                    top_n = min(3, len(scored_actions))
+                    idx = random.randint(0, top_n - 1) if top_n > 0 else 0
+                    action = scored_actions[idx][0] if idx < len(scored_actions) else random.choice(actions)
+                else:
+                    action = random.choice(actions)
+            elif action is None:
+                # 备选方案：随机选择
                 action = random.choice(actions)
 
             # 应用动作
             state_copy = self.fast_simulate(state_copy, action)
 
-            # 模拟卡牌选择（针对5张展示牌变体）
+            # 切换玩家
+            if hasattr(state_copy, 'current_player_id'):
+                state_copy.current_player_id = 1 - state_copy.current_player_id
+
+            # 模拟卡牌选择
             self._simulate_card_selection(state_copy)
 
-        # 使用混合评估函数评估最终状态
-        return Node.hybrid_evaluate(state_copy)
+        # 使用增强评估
+        return self._enhanced_evaluate(state_copy)
 
     def _simulate_card_selection(self, state):
         """模拟从5张展示牌中选择一张"""
@@ -1093,7 +1300,7 @@ class myAgent(Agent):
 
         # 检查特殊牌：Jack牌
         card_str = str(card).lower()
-        if card_str[0] == 'j':
+        if card_str and len(card_str) >= 2 and card_str[0] == 'j':
             if card_str[1] in ['h', 's']:  # 单眼J牌
                 # 获取移除价值最高的位置
                 max_remove_value = np.max(board_values[player_id]['remove'])
@@ -1142,7 +1349,7 @@ class myAgent(Agent):
         for action in trade_actions:
             card = action.get('draft_card', '')
             card_str = str(card).lower()
-            if card_str and card_str[0] == 'j':
+            if card_str and len(card_str) >= 2 and card_str[0] == 'j':
                 if card_str[1] in ['h', 's']:  # 单眼J
                     jack_actions.append((action, 10))  # 最高优先级
                 elif card_str[1] in ['d', 'c']:  # 双眼J
@@ -1179,30 +1386,38 @@ class myAgent(Agent):
             # 确定颜色
             color = self.my_color
             if hasattr(state, 'current_player_id'):
-                color = state.agents[state.current_player_id].colour
-            # 放置棋子
+                player_id = state.current_player_id
+                if (hasattr(state, 'agents') and
+                        0 <= player_id < len(state.agents) and
+                        hasattr(state.agents[player_id], 'colour')):
+                    color = state.agents[player_id].colour
+
             new_state.board.chips[r][c] = color
-            # 更新手牌（如果需要）
-            if hasattr(new_state, 'agents') and hasattr(new_state.agents[self.id], 'hand'):
-                if 'play_card' in action:
-                    card = action['play_card']
-                    try:
-                        new_state.agents[self.id].hand.remove(card)
-                    except:
-                        pass
+            # 放置棋子
+            if hasattr(new_state, 'agents'):  # 第一层：确认agents存在
+                if 0 <= self.id < len(new_state.agents):  # 第二层：确认ID在范围内
+                    if hasattr(new_state.agents[self.id], 'hand'):  # 第三层：确认hand存在
+                        if 'play_card' in action:
+                            card = action['play_card']
+                            try:
+                                new_state.agents[self.id].hand.remove(card)
+                            except ValueError:
+                                pass
         # 处理移除动作
         elif action['type'] == 'remove' and 'coords' in action:
             r, c = action['coords']
             # 移除棋子
             new_state.board.chips[r][c] = EMPTY
             # 更新手牌
-            if hasattr(new_state, 'agents') and hasattr(new_state.agents[self.id], 'hand'):
-                if 'play_card' in action:
-                    card = action['play_card']
-                    try:
-                        new_state.agents[self.id].hand.remove(card)
-                    except:
-                        pass
+            if hasattr(new_state, 'agents'):
+                if 0 <= self.id < len(new_state.agents):
+                    if hasattr(new_state.agents[self.id], 'hand'):
+                        if 'play_card' in action:
+                            card = action['play_card']
+                            try:
+                                new_state.agents[self.id].hand.remove(card)
+                            except ValueError:
+                                pass
         return new_state
 
     def custom_shallow_copy(self, state):
@@ -1213,3 +1428,41 @@ class myAgent(Agent):
     def _is_timeout(self):
         """检查是否超时"""
         return time.time() - self.start_time > MAX_THINK_TIME * 0.95
+
+    def _enhanced_evaluate(self, state):
+        """威胁感知的评估"""
+        # 调用原有的评估
+        base_value = Node.hybrid_evaluate(state)
+
+        # 添加威胁调整
+        board = state.board.chips
+
+        my_threats = BoardEvaluator._detect_immediate_threats(
+            board, self.opp_color, self.my_color
+        )
+        opp_opportunities = BoardEvaluator._detect_immediate_threats(
+            board, self.my_color, self.opp_color
+        )
+
+        # 威胁惩罚
+        threat_penalty = 0
+        for _, _, level in my_threats:
+            if level >= 5:
+                threat_penalty -= 1.0
+            elif level >= 4:
+                threat_penalty -= 0.5
+            elif level >= 3:
+                threat_penalty -= 0.2
+
+        # 机会奖励
+        opportunity_bonus = 0
+        for _, _, level in opp_opportunities:
+            if level >= 5:
+                opportunity_bonus += 1.0
+            elif level >= 4:
+                opportunity_bonus += 0.5
+            elif level >= 3:
+                opportunity_bonus += 0.2
+
+        final_value = base_value + threat_penalty + opportunity_bonus
+        return max(-1, min(1, final_value))
