@@ -136,7 +136,7 @@ class BoardEvaluator:
                 (3, 1): (0, 200),
                 (1, 3): (0, 100),
             }
-            return table[(my, op)]
+            return table.get((my, op), (10, 5))
 
         # 计算每个玩家的位置价值
         for player in [0, 1]:
@@ -185,6 +185,7 @@ class BoardEvaluator:
 
         return combined
 
+    @staticmethod
     def evaluate_board(chips):
         values = {
             0: [0 for _ in range(6)],
@@ -484,6 +485,7 @@ class BoardEvaluator:
             pos_queue.append((new_x, new_y))
             right += 1
 
+    @staticmethod
     # Two eyed jacks can be placed anywhere EMPTY
     def get_two_eyed_pos(chips):
         res = []
@@ -495,6 +497,7 @@ class BoardEvaluator:
                     res.append((i, j))
         return res
 
+    @staticmethod
     # One eyed jacks can remove one opponent's chip
     def get_one_eyed_pos(chips, oc):
         res = []
@@ -506,6 +509,7 @@ class BoardEvaluator:
                     res.append((i, j))
         return res
 
+    @staticmethod
     # Normal cards can be placed into its position when EMPTY
     def get_normal_pos(chips, card):
         res = []
@@ -571,7 +575,7 @@ class Node:
                 # 结合BoardEvaluator的启发式调整
                 if child.action:
                     # 获取BoardEvaluator的评估作为调整因子
-                    heuristic_factor = 1.0 / (1.0 + Node.heuristic(self.state, child.action) / 100)
+                    heuristic_factor = 1.0 / (1.0 + Node.hybrid_heuristic(self.state, child.action) / 100)
                 else:
                     heuristic_factor = 1.0
 
@@ -615,7 +619,7 @@ class Node:
     @staticmethod
     def hybrid_heuristic(state, action):
         """A* + BoardEvaluator启发式函数 -评估动作的潜在价值（越低越好)"""
-        if action.get('type') != 'place' and action.get('type') != 'remove' or 'coords' not in action:
+        if (action.get('type') not in ['place', 'remove']) or ('coords' not in action):
             return 100  # 非放置/移除动作或无坐标
 
         r, c = action['coords']
@@ -893,7 +897,7 @@ class myAgent(Agent):
         # 评估每个动作
         scored_actions = []
         for action in valid_actions:
-            score = Node.heuristic(game_state, action)
+            score = Node.hybrid_heuristic(game_state, action)
             scored_actions.append((action, score))
 
         # 按评分排序（升序，越小越好）
@@ -1035,7 +1039,7 @@ class myAgent(Agent):
     def _simulate_card_selection(self, state):
         """模拟从5张展示牌中选择一张"""
         # 检查是否有展示牌属性
-        if not hasattr(state, 'display_cards') and state.display_cards:
+        if not hasattr(state, 'display_cards') or not state.display_cards:
             return
         # 评估每张牌的价值
         best_card = None
