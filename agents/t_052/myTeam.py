@@ -6,7 +6,6 @@ import copy
 import math
 import itertools
 
-
 # ===========================
 # 1. 常量定义区
 # ===========================
@@ -16,47 +15,217 @@ HOTB_COORDS = [(4, 4), (4, 5), (5, 4), (5, 5)]  # 中心热点位置
 CORNERS = [(0, 0), (0, 9), (9, 0), (9, 9)]  # 角落位置（自由点）
 SIMULATION_LIMIT = 150  # MCTS模拟的最大次数
 
+# 新增：增强评估常量
+THREAT_WEIGHTS = {
+    5: 10000,  # 已完成序列 - 最高优先级
+    4: 1000,  # 4连 - 极高威胁
+    3: 200,  # 3连 - 高威胁
+    2: 50,  # 2连 - 中等威胁
+    1: 10  # 1连 - 低威胁
+}
+
+POSITION_VALUES = [
+    [1, 1, 2, 3, 4, 4, 3, 2, 1, 1],
+    [1, 2, 3, 4, 5, 5, 4, 3, 2, 1],
+    [2, 3, 4, 5, 6, 6, 5, 4, 3, 2],
+    [3, 4, 5, 6, 7, 7, 6, 5, 4, 3],
+    [4, 5, 6, 7, 8, 8, 7, 6, 5, 4],
+    [4, 5, 6, 7, 8, 8, 7, 6, 5, 4],
+    [3, 4, 5, 6, 7, 7, 6, 5, 4, 3],
+    [2, 3, 4, 5, 6, 6, 5, 4, 3, 2],
+    [1, 2, 3, 4, 5, 5, 4, 3, 2, 1],
+    [1, 1, 2, 3, 4, 4, 3, 2, 1, 1]
+]
+
+
 class CardEvaluator:
     def __init__(self, agent):
         self.agent = agent
 
     def _evaluate_card(self, card, state):
-        """评估卡牌在当前状态下的价值"""
+        """评估卡牌在当前状态下的价值 - 增强版"""
         board = state.board.chips
 
         # 优先级1：双眼J - 直接最高分
         if self._is_two_eyed_jack(card):
-            return 10000
+            return 15000  # 提高J牌价值
         # 优先级2：单眼J - 次高分
         if self._is_one_eyed_jack(card):
-            return 5000
-        # 优先级3：普通卡牌 - 使用指数评分
+            return 8000  # 提高J牌价值
+        # 优先级3：普通卡牌 - 使用增强指数评分
         if card in COORDS:
-            return self._exponential_card_evaluation(card, state)
+            return self._enhanced_card_evaluation(card, state)
         return 0
 
-    def _exponential_card_evaluation(self, card, state):
-        """基于指数的普通卡牌评估"""
+    def _enhanced_card_evaluation(self, card, state):
+        """增强的卡牌评估 - 考虑多重因素"""
         if card not in COORDS:
             return 0
 
         board = state.board.chips
         total_score = 0
+
         # 获取该卡牌对应的所有可能位置
         positions = COORDS[card] if isinstance(COORDS[card], list) else [COORDS[card]]
+
+        position_scores = []
         for pos in positions:
-            r ,c = pos
+            r, c = pos
             # 检查位置是否可用
             if not self._is_position_available(board, r, c):
                 continue
-            # 计算该位置的指数评分
-            position_score = self._calculate_position_score(board, r, c)
-            total_score += position_score
-        # 如果有多个位置，取平均值
-        return total_score / max(1, len(positions))
+
+            # 综合位置评分
+            position_score = (
+                    self._calculate_position_score(board, r, c) * 0.4 +  # 原有评分
+                    self._calculate_threat_potential(board, r, c) * 0.3 +  # 威胁潜力
+                    self._calculate_blocking_value(board, r, c) * 0.2 +  # 阻塞价值
+                    self._calculate_strategic_value(board, r, c) * 0.1  # 战略价值
+            )
+            position_scores.append(position_score)
+
+        if not position_scores:
+            return 0
+
+        # 取最高分而非平均分 - 卡牌的价值由最佳位置决定
+        return max(position_scores)
+
+    def _calculate_threat_potential(self, board, r, c):
+        """计算威胁潜力 - 新增方法"""
+        my_color = self.agent.my_color
+        if not my_color:
+            return 0
+
+        threat_score = 0
+        directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
+
+        for dx, dy in directions:
+            # 检查这个位置能形成的最长潜在序列
+            potential_length = self._calculate_potential_sequence(board, r, c, dx, dy, my_color)
+
+            if potential_length >= 5:
+                threat_score += 2000  # 能完成序列
+            elif potential_length == 4:
+                threat_score += 800  # 能形成4连威胁
+            elif potential_length == 3:
+                threat_score += 300  # 能形成3连
+            elif potential_length == 2:
+                threat_score += 100  # 能形成2连
+
+        return threat_score
+
+    def _calculate_potential_sequence(self, board, r, c, dx, dy, color):
+        """计算潜在序列长度 - 考虑空位"""
+        sequence_length = 1  # 当前位置
+        empty_spots = 0
+
+        # 正向检查
+        for i in range(1, 5):
+            x, y = r + i * dx, c + i * dy
+            if 0 <= x < 10 and 0 <= y < 10:
+                if board[x][y] == color:
+                    sequence_length += 1
+                elif board[x][y] == 0 or board[x][y] == '0':
+                    empty_spots += 1
+                    if empty_spots <= 1:  # 允许一个空位
+                        sequence_length += 1
+                else:
+                    break
+            else:
+                break
+
+        # 反向检查
+        empty_spots = 0
+        for i in range(1, 5):
+            x, y = r - i * dx, c - i * dy
+            if 0 <= x < 10 and 0 <= y < 10:
+                if board[x][y] == color:
+                    sequence_length += 1
+                elif board[x][y] == 0 or board[x][y] == '0':
+                    empty_spots += 1
+                    if empty_spots <= 1:  # 允许一个空位
+                        sequence_length += 1
+                else:
+                    break
+            else:
+                break
+
+        return min(sequence_length, 5)
+
+    def _calculate_blocking_value(self, board, r, c):
+        """计算阻塞对手的价值 - 新增方法"""
+        opp_color = self.agent.opp_color
+        if not opp_color:
+            return 0
+
+        blocking_score = 0
+        directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
+
+        for dx, dy in directions:
+            # 检查放置这个位置是否能阻止对手形成威胁序列
+            opp_threat = self._calculate_opponent_threat_at_position(board, r, c, dx, dy, opp_color)
+
+            if opp_threat >= 4:
+                blocking_score += 1500  # 阻止对手获胜
+            elif opp_threat == 3:
+                blocking_score += 600  # 阻止对手形成4连威胁
+            elif opp_threat == 2:
+                blocking_score += 200  # 阻止对手形成3连
+
+        return blocking_score
+
+    def _calculate_opponent_threat_at_position(self, board, r, c, dx, dy, opp_color):
+        """计算对手在特定位置的威胁程度"""
+        # 模拟在该位置放置对手棋子，看能形成多长的序列
+        opp_sequence = 1  # 假设对手放在这里
+
+        # 正向检查
+        for i in range(1, 5):
+            x, y = r + i * dx, c + i * dy
+            if 0 <= x < 10 and 0 <= y < 10 and board[x][y] == opp_color:
+                opp_sequence += 1
+            else:
+                break
+
+        # 反向检查
+        for i in range(1, 5):
+            x, y = r - i * dx, c - i * dy
+            if 0 <= x < 10 and 0 <= y < 10 and board[x][y] == opp_color:
+                opp_sequence += 1
+            else:
+                break
+
+        return min(opp_sequence, 5)
+
+    def _calculate_strategic_value(self, board, r, c):
+        """计算战略价值 - 新增方法"""
+        strategic_score = 0
+
+        # 1. 位置价值表
+        strategic_score += POSITION_VALUES[r][c] * 10
+
+        # 2. 连接度 - 周围己方棋子的数量
+        my_color = self.agent.my_color
+        if my_color:
+            adjacent_count = 0
+            for dr in [-1, 0, 1]:
+                for dc in [-1, 0, 1]:
+                    if dr == 0 and dc == 0:
+                        continue
+                    nr, nc = r + dr, c + dc
+                    if 0 <= nr < 10 and 0 <= nc < 10:
+                        if board[nr][nc] == my_color:
+                            adjacent_count += 1
+            strategic_score += adjacent_count * 30
+
+        # 3. 中心控制加成
+        if (r, c) in HOTB_COORDS:
+            strategic_score += 100
+
+        return strategic_score
 
     def _calculate_position_score(self, board, r, c):
-        """计算单个位置的指数评分"""
+        """计算单个位置的指数评分 - 原有方法保持不变"""
         total_score = 0
 
         # 四个主要方向：水平， 垂直，主对角线，反对角线
@@ -126,7 +295,7 @@ class CardEvaluator:
 class ActionEvaluator:
     @staticmethod
     def heuristic(state, action):
-        """A*启发式函数 -评估动作的潜在价值（越低越好)"""
+        """A*启发式函数 -评估动作的潜在价值（越低越好) - 增强版"""
         if action.get('type') != 'place' or 'coords' not in action:
             return 100  # 非放置动作或无坐标
 
@@ -150,73 +319,196 @@ class ActionEvaluator:
         board_copy = [row[:] for row in board]
         board_copy[r][c] = color
 
-        # 计算各种分数
-        score = 0
-
-        # 中心偏好
-        distance = abs(r - 4.5) + abs(c - 4.5)
-        score += max(0, 5 - distance) * 2
-
-        # 连续链评分
-        for dx, dy in [(0, 1), (1, 0), (1, 1), (1, -1)]:
-            count = 1  # 当前位置
-            # 正向检查
-            for i in range(1, 5):
-                x, y = r + dx * i, c + dy * i
-                if 0 <= x < 10 and 0 <= y < 10 and board_copy[x][y] == color:
-                    count += 1
-                else:
-                    break
-            # 反向检查
-            for i in range(1, 5):
-                x, y = r - dx * i, c - dy * i
-                if 0 <= x < 10 and 0 <= y < 10 and board_copy[x][y] == color:
-                    count += 1
-                else:
-                    break
-
-            # 根据连续长度评分
-            if count >= 5:
-                score += 200  # 形成序列
-            elif count == 4:
-                score += 100
-            elif count == 3:
-                score += 30
-            elif count == 2:
-                score += 10
-
-        # 阻止对手评分
-        for dx, dy in [(0, 1), (1, 0), (1, 1), (1, -1)]:
-            enemy_chain = 0
-
-            # 检查移除此位置是否会破坏对手的连续链
-            for i in range(1, 5):
-                x, y = r + dx * i, c + dy * i
-                if 0 <= x < 10 and 0 <= y < 10 and board[x][y] == enemy:
-                    enemy_chain += 1
-                else:
-                    break
-
-            for i in range(1, 5):
-                x, y = r - dx * i, c - dy * i
-                if 0 <= x < 10 and 0 <= y < 10 and board[x][y] == enemy:
-                    enemy_chain += 1
-                else:
-                    break
-
-            if enemy_chain >= 3:
-                score += 50  # 高优先级阻断
-
-        # 中心控制评分
-        hotb_controlled = sum(1 for x, y in HOTB_COORDS if board_copy[x][y] == color)
-        score += hotb_controlled * 15
+        # 增强的综合评分
+        score = (
+                ActionEvaluator._calculate_offensive_score(board_copy, r, c, color) * 0.4 +
+                ActionEvaluator._calculate_defensive_score(board, r, c, enemy) * 0.3 +
+                ActionEvaluator._calculate_positional_score(r, c, board_copy, color) * 0.2 +
+                ActionEvaluator._calculate_tempo_score(board, r, c, color, enemy) * 0.1
+        )
 
         # 转换为启发式分数（越低越好）
-        return 100 - score
+        return max(0, 150 - score)
+
+    @staticmethod
+    def _calculate_offensive_score(board_copy, r, c, color):
+        """计算进攻评分 - 增强版"""
+        score = 0
+        directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
+
+        max_sequence = 0
+        for dx, dy in directions:
+            count = ActionEvaluator._count_consecutive(board_copy, r, c, dx, dy, color)
+            max_sequence = max(max_sequence, count)
+
+            # 使用增强的威胁权重
+            if count in THREAT_WEIGHTS:
+                score += THREAT_WEIGHTS[count]
+
+            # 额外奖励：接近获胜的序列
+            if count == 4:
+                # 检查是否能在下一步完成序列
+                if ActionEvaluator._can_complete_sequence(board_copy, r, c, dx, dy, color):
+                    score += 5000
+
+        return score
+
+    @staticmethod
+    def _can_complete_sequence(board, r, c, dx, dy, color):
+        """检查是否能在下一步完成序列"""
+        # 检查序列两端是否有空位可以完成5连
+        sequence_positions = [(r, c)]
+
+        # 收集当前序列的所有位置
+        for i in range(1, 5):
+            x, y = r + i * dx, c + i * dy
+            if 0 <= x < 10 and 0 <= y < 10 and board[x][y] == color:
+                sequence_positions.append((x, y))
+            else:
+                break
+
+        for i in range(1, 5):
+            x, y = r - i * dx, c - i * dy
+            if 0 <= x < 10 and 0 <= y < 10 and board[x][y] == color:
+                sequence_positions.insert(0, (x, y))
+            else:
+                break
+
+        if len(sequence_positions) >= 4:
+            # 检查两端是否有空位
+            first_pos = sequence_positions[0]
+            last_pos = sequence_positions[-1]
+
+            # 检查前端
+            prev_x, prev_y = first_pos[0] - dx, first_pos[1] - dy
+            if (0 <= prev_x < 10 and 0 <= prev_y < 10 and
+                    (board[prev_x][prev_y] == 0 or board[prev_x][prev_y] == '0')):
+                return True
+
+            # 检查后端
+            next_x, next_y = last_pos[0] + dx, last_pos[1] + dy
+            if (0 <= next_x < 10 and 0 <= next_y < 10 and
+                    (board[next_x][next_y] == 0 or board[next_x][next_y] == '0')):
+                return True
+
+        return False
+
+    @staticmethod
+    def _calculate_defensive_score(board, r, c, enemy):
+        """计算防御评分 - 增强版"""
+        score = 0
+        directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
+
+        for dx, dy in directions:
+            # 检查阻断对手的威胁程度
+            threat_level = ActionEvaluator._assess_blocking_threat(board, r, c, dx, dy, enemy)
+
+            if threat_level >= 4:
+                score += 2000  # 阻止对手获胜
+            elif threat_level == 3:
+                score += 800  # 阻止对手形成获胜威胁
+            elif threat_level == 2:
+                score += 300  # 阻止对手形成强威胁
+            elif threat_level == 1:
+                score += 100  # 阻止对手扩展
+
+        return score
+
+    @staticmethod
+    def _assess_blocking_threat(board, r, c, dx, dy, enemy):
+        """评估在此位置阻断对手的威胁等级"""
+        # 检查如果对手在此位置放棋子会形成多长的序列
+        enemy_sequence = 1
+
+        # 正向检查
+        for i in range(1, 5):
+            x, y = r + i * dx, c + i * dy
+            if 0 <= x < 10 and 0 <= y < 10 and board[x][y] == enemy:
+                enemy_sequence += 1
+            else:
+                break
+
+        # 反向检查
+        for i in range(1, 5):
+            x, y = r - i * dx, c - i * dy
+            if 0 <= x < 10 and 0 <= y < 10 and board[x][y] == enemy:
+                enemy_sequence += 1
+            else:
+                break
+
+        return min(enemy_sequence, 5)
+
+    @staticmethod
+    def _calculate_positional_score(r, c, board_copy, color):
+        """计算位置评分 - 增强版"""
+        score = 0
+
+        # 1. 基础位置价值
+        score += POSITION_VALUES[r][c] * 15
+
+        # 2. 中心控制
+        distance = abs(r - 4.5) + abs(c - 4.5)
+        score += max(0, 10 - distance) * 3
+
+        # 3. 中心热点控制
+        hotb_controlled = sum(1 for x, y in HOTB_COORDS if board_copy[x][y] == color)
+        score += hotb_controlled * 25
+
+        # 4. 连接性评分 - 与己方棋子的连接度
+        connectivity = 0
+        for dr in [-2, -1, 0, 1, 2]:
+            for dc in [-2, -1, 0, 1, 2]:
+                if dr == 0 and dc == 0:
+                    continue
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < 10 and 0 <= nc < 10:
+                    if board_copy[nr][nc] == color:
+                        # 距离越近，连接价值越高
+                        connection_value = 3 - (abs(dr) + abs(dc)) // 2
+                        connectivity += max(1, connection_value)
+        score += connectivity * 5
+
+        return score
+
+    @staticmethod
+    def _calculate_tempo_score(board, r, c, color, enemy):
+        """计算节奏评分 - 新增：评估紧迫性"""
+        score = 0
+
+        # 1. 己方接近获胜的紧迫性
+        my_max_threat = ActionEvaluator._find_max_threat_level(board, color)
+        if my_max_threat >= 3:
+            score += (my_max_threat - 2) * 100  # 越接近获胜越重要
+
+        # 2. 对手威胁的紧迫性
+        enemy_max_threat = ActionEvaluator._find_max_threat_level(board, enemy)
+        if enemy_max_threat >= 3:
+            score += (enemy_max_threat - 2) * 150  # 防守比进攻更紧迫
+
+        # 3. 双向威胁奖励
+        if my_max_threat >= 3 and enemy_max_threat >= 3:
+            score += 200  # 关键对决位置
+
+        return score
+
+    @staticmethod
+    def _find_max_threat_level(board, color):
+        """找到棋盘上某颜色的最大威胁等级"""
+        max_threat = 0
+        directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
+
+        for i in range(10):
+            for j in range(10):
+                if board[i][j] == color:
+                    for dx, dy in directions:
+                        threat = ActionEvaluator._count_consecutive(board, i, j, dx, dy, color)
+                        max_threat = max(max_threat, threat)
+
+        return max_threat
 
     @staticmethod
     def _calculate_action_score(board, r, c, color, enemy):
-        """计算动作分数"""
+        """计算动作分数 - 保持原有接口"""
         score = 0
 
         # 创建假设棋盘
@@ -290,7 +582,7 @@ class ActionEvaluator:
 class StateEvaluator:
     @staticmethod
     def evaluate(state, last_action=None):
-        """评估游戏状态的价值"""
+        """评估游戏状态的价值 - 增强版"""
         board = state.board.chips
 
         # 获取玩家颜色
@@ -303,77 +595,268 @@ class StateEvaluator:
             my_color = state.agents[agent_id].colour
             opp_color = 'r' if my_color == 'b' else 'b'
 
-        # 1. 位置评分
+        # 增强的多维度评分
+        position_score = StateEvaluator._enhanced_position_score(board, my_color, opp_color)
+        sequence_score = StateEvaluator._enhanced_sequence_score(board, my_color)
+        defense_score = StateEvaluator._enhanced_defense_score(board, opp_color)
+        control_score = StateEvaluator._enhanced_control_score(board, my_color, opp_color)
+        tempo_score = StateEvaluator._calculate_tempo_advantage(board, my_color, opp_color)
+
+        # 动态权重 - 根据游戏阶段调整
+        game_phase = StateEvaluator._determine_game_phase(board)
+        if game_phase == "opening":
+            weights = [0.3, 0.2, 0.1, 0.3, 0.1]  # 重视位置和控制
+        elif game_phase == "middle":
+            weights = [0.2, 0.3, 0.3, 0.1, 0.1]  # 重视序列和防御
+        else:  # endgame
+            weights = [0.1, 0.4, 0.4, 0.05, 0.05]  # 重视序列和防御
+
+        # 5. 综合评分
+        total_score = (
+                position_score * weights[0] +
+                sequence_score * weights[1] +
+                defense_score * weights[2] +
+                control_score * weights[3] +
+                tempo_score * weights[4]
+        )
+
+        # 归一化到[-1, 1]区间
+        return max(-1, min(1, total_score / 300))
+
+    @staticmethod
+    def _determine_game_phase(board):
+        """判断游戏阶段"""
+        total_pieces = sum(1 for i in range(10) for j in range(10)
+                           if board[i][j] not in [0, '0'])
+
+        if total_pieces < 20:
+            return "opening"
+        elif total_pieces < 60:
+            return "middle"
+        else:
+            return "endgame"
+
+    @staticmethod
+    def _enhanced_position_score(board, my_color, opp_color):
+        """增强的位置评分"""
         position_score = 0
+
         for i in range(10):
             for j in range(10):
-                if board[i][j] == my_color:
-                    # 位置权重
-                    if (i, j) in HOTB_COORDS:
-                        position_score += 1.5  # 中心位置
-                    elif i in [0, 9] or j in [0, 9]:
-                        position_score += 0.8  # 边缘位置
-                    else:
-                        position_score += 1.0  # 其他位置
+                cell_value = board[i][j]
+                base_value = POSITION_VALUES[i][j]
 
-                elif board[i][j] == opp_color:
-                    # 对手的位置，负分
-                    if (i, j) in HOTB_COORDS:
-                        position_score -= 1.5
-                    elif i in [0, 9] or j in [0, 9]:
-                        position_score -= 0.8
-                    else:
-                        position_score -= 1.0
+                if cell_value == my_color:
+                    # 己方棋子的价值
+                    multiplier = 1.0
 
-        # 2. 序列潜力评分
+                    # 连接性奖励
+                    connections = StateEvaluator._count_connections(board, i, j, my_color)
+                    multiplier += connections * 0.1
+
+                    # 中心位置额外奖励
+                    if (i, j) in HOTB_COORDS:
+                        multiplier += 0.5
+
+                    position_score += base_value * multiplier
+
+                elif cell_value == opp_color:
+                    # 对手棋子的负面影响
+                    multiplier = 1.0
+                    connections = StateEvaluator._count_connections(board, i, j, opp_color)
+                    multiplier += connections * 0.1
+
+                    if (i, j) in HOTB_COORDS:
+                        multiplier += 0.5
+
+                    position_score -= base_value * multiplier
+
+        return position_score
+
+    @staticmethod
+    def _count_connections(board, r, c, color):
+        """计算位置的连接数"""
+        connections = 0
+        for dr in [-1, 0, 1]:
+            for dc in [-1, 0, 1]:
+                if dr == 0 and dc == 0:
+                    continue
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < 10 and 0 <= nc < 10:
+                    if board[nr][nc] == color:
+                        connections += 1
+        return connections
+
+    @staticmethod
+    def _enhanced_sequence_score(board, my_color):
+        """增强的序列评分"""
         sequence_score = 0
+        threat_levels = {}
+
+        # 收集所有威胁等级
         for i in range(10):
             for j in range(10):
                 if board[i][j] == my_color:
                     for dx, dy in [(0, 1), (1, 0), (1, 1), (1, -1)]:
-                        # 计算连续长度
-                        my_count = ActionEvaluator._count_consecutive(board, i, j, dx, dy, my_color)
-                        # 指数增长的序列得分
-                        if my_count >= 5:
-                            sequence_score += 100  # 形成序列
-                        elif my_count == 4:
-                            sequence_score += 20
-                        elif my_count == 3:
-                            sequence_score += 5
-                        elif my_count == 2:
-                            sequence_score += 1
+                        count = ActionEvaluator._count_consecutive(board, i, j, dx, dy, my_color)
+                        if count > 1:
+                            threat_levels[count] = threat_levels.get(count, 0) + 1
 
-        # 3. 防御评分 - 阻止对手的序列
+        # 根据威胁等级计算分数
+        for level, count in threat_levels.items():
+            if level >= 5:
+                sequence_score += 10000  # 已获胜
+            elif level == 4:
+                sequence_score += 1000 * count  # 4连威胁
+            elif level == 3:
+                sequence_score += 100 * count  # 3连威胁
+            elif level == 2:
+                sequence_score += 20 * count  # 2连威胁
+
+        return sequence_score
+
+    @staticmethod
+    def _enhanced_defense_score(board, opp_color):
+        """增强的防御评分"""
         defense_score = 0
+        opp_threats = {}
+
+        # 收集对手威胁
         for i in range(10):
             for j in range(10):
                 if board[i][j] == opp_color:
                     for dx, dy in [(0, 1), (1, 0), (1, 1), (1, -1)]:
-                        opp_count = ActionEvaluator._count_consecutive(board, i, j, dx, dy, opp_color)
+                        count = ActionEvaluator._count_consecutive(board, i, j, dx, dy, opp_color)
+                        if count > 1:
+                            opp_threats[count] = opp_threats.get(count, 0) + 1
 
-                        # 对手序列威胁得分（负面）
-                        if opp_count >= 4:
-                            defense_score -= 50  # 高度威胁
-                        elif opp_count == 3:
-                            defense_score -= 10
+        # 根据对手威胁计算防御分数
+        for level, count in opp_threats.items():
+            if level >= 4:
+                defense_score -= 2000 * count  # 对手4连 - 极度危险
+            elif level == 3:
+                defense_score -= 400 * count  # 对手3连 - 高度危险
+            elif level == 2:
+                defense_score -= 50 * count  # 对手2连 - 中度威胁
 
-        # 4. 中心控制评分
-        hotb_score = 0
-        for x, y in HOTB_COORDS:
-            if board[x][y] == my_color:
-                hotb_score += 5
-            elif board[x][y] == opp_color:
-                hotb_score -= 5
+        return defense_score
 
-        # 5. 综合评分
-        total_score = position_score + sequence_score + defense_score + hotb_score
+    @staticmethod
+    def _enhanced_control_score(board, my_color, opp_color):
+        """增强的控制评分"""
+        control_score = 0
 
-        # 归一化到[-1, 1]区间
-        return max(-1, min(1, total_score / 200))
+        # 1. 中心热点控制
+        my_hotb = sum(1 for x, y in HOTB_COORDS if board[x][y] == my_color)
+        opp_hotb = sum(1 for x, y in HOTB_COORDS if board[x][y] == opp_color)
+        control_score += (my_hotb - opp_hotb) * 20
+
+        # 2. 关键空位控制
+        key_positions = StateEvaluator._identify_key_positions(board, my_color, opp_color)
+        control_score += len(key_positions) * 10
+
+        # 3. 边缘控制
+        my_edge = StateEvaluator._count_edge_control(board, my_color)
+        opp_edge = StateEvaluator._count_edge_control(board, opp_color)
+        control_score += (my_edge - opp_edge) * 2
+
+        return control_score
+
+    @staticmethod
+    def _identify_key_positions(board, my_color, opp_color):
+        """识别关键空位"""
+        key_positions = set()
+        directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
+
+        for i in range(10):
+            for j in range(10):
+                if board[i][j] in [0, '0']:
+                    # 检查这个空位是否对任一方有战略价值
+                    importance = 0
+
+                    for dx, dy in directions:
+                        # 检查能否帮助己方形成威胁
+                        my_potential = StateEvaluator._calc_position_potential(
+                            board, i, j, dx, dy, my_color)
+                        opp_potential = StateEvaluator._calc_position_potential(
+                            board, i, j, dx, dy, opp_color)
+
+                        if my_potential >= 3 or opp_potential >= 3:
+                            importance += 1
+
+                    if importance >= 2:  # 多个方向都有价值
+                        key_positions.add((i, j))
+
+        return key_positions
+
+    @staticmethod
+    def _calc_position_potential(board, r, c, dx, dy, color):
+        """计算位置在特定方向的潜力"""
+        potential = 1  # 当前位置
+
+        # 正向检查
+        for i in range(1, 5):
+            x, y = r + i * dx, c + i * dy
+            if 0 <= x < 10 and 0 <= y < 10:
+                if board[x][y] == color:
+                    potential += 1
+                elif board[x][y] not in [0, '0']:
+                    break
+            else:
+                break
+
+        # 反向检查
+        for i in range(1, 5):
+            x, y = r - i * dx, c - i * dy
+            if 0 <= x < 10 and 0 <= y < 10:
+                if board[x][y] == color:
+                    potential += 1
+                elif board[x][y] not in [0, '0']:
+                    break
+            else:
+                break
+
+        return min(potential, 5)
+
+    @staticmethod
+    def _count_edge_control(board, color):
+        """计算边缘控制"""
+        edge_count = 0
+        for i in range(10):
+            if board[i][0] == color:
+                edge_count += 1
+            if board[i][9] == color:
+                edge_count += 1
+        for j in range(1, 9):  # 避免重复计算角落
+            if board[0][j] == color:
+                edge_count += 1
+            if board[9][j] == color:
+                edge_count += 1
+        return edge_count
+
+    @staticmethod
+    def _calculate_tempo_advantage(board, my_color, opp_color):
+        """计算节奏优势"""
+        my_max_threat = ActionEvaluator._find_max_threat_level(board, my_color)
+        opp_max_threat = ActionEvaluator._find_max_threat_level(board, opp_color)
+
+        tempo_score = 0
+
+        # 威胁等级差异
+        threat_diff = my_max_threat - opp_max_threat
+        tempo_score += threat_diff * 50
+
+        # 主动权评估
+        if my_max_threat >= 4:
+            tempo_score += 200  # 我方有获胜威胁
+        if opp_max_threat >= 4:
+            tempo_score -= 250  # 对手有获胜威胁，更危险
+
+        return tempo_score
 
     @staticmethod
     def _calculate_sequence_score(board, color):
-        """计算序列得分"""
+        """计算序列得分 - 保持原有接口"""
         sequence_score = 0
         for i in range(10):
             for j in range(10):
@@ -392,7 +875,7 @@ class StateEvaluator:
 
     @staticmethod
     def _calculate_defense_score(board, opp_color):
-        """计算防御得分"""
+        """计算防御得分 - 保持原有接口"""
         defense_score = 0
         for i in range(10):
             for j in range(10):
@@ -478,6 +961,7 @@ class Node:
     """
     The search tree node integrating MCTS and A*
     """
+
     def __init__(self, state, parent=None, action=None):
         # 状态表示
         try:
@@ -587,7 +1071,8 @@ class TimeManager:
 
 
 class myAgent(Agent):
-    """智能体 myAgent"""
+    """智能体 myAgent - 增强对抗性版本"""
+
     def __init__(self, _id):
         """初始化Agent"""
         super().__init__(_id)
