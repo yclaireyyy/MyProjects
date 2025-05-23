@@ -552,7 +552,7 @@ class Node:
         return best_child
 
     def expand(self, agent):
-        """Expand node by adding one new child"""
+        """Expand node by adding one new child """
         untried = self.get_untried_actions(agent)
 
         if not untried:
