@@ -308,7 +308,7 @@ class StateEvaluator:
 
     @staticmethod
     def evaluate(state, agent_id, last_action=None):
-        """Evaluate game state value with comprehensive factors"""
+        """Evaluate game state value with comprehensive factors """
         if not state:
             return 0
 
