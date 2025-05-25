@@ -1,3 +1,6 @@
+from numpy import inf
+from numpy.random._common import namedtuple
+
 from template import Agent
 from Sequence.sequence_model import SequenceGameRule as GameRule
 import heapq
@@ -6,6 +9,11 @@ import itertools
 
 MAX_THINK_TIME = 0.95
 HOTB_COORDS = [(4, 4), (4, 5), (5, 4), (5, 5)]
+
+
+TTEntry = namedtuple('TTEntry', 'depth score flag best_move')
+# flag: 'EXACT', 'LOWER', 'UPPER'
+
 
 class myAgent(Agent):
     def __init__(self, _id):
@@ -96,33 +104,67 @@ class myAgent(Agent):
         return 100 - score
 
     def center_bias(self, r, c):
-        distance = abs(r - 4.5) + abs(c - 4.5)
-        return max(0, 5 - distance) * 2
+        center = [(4, 4), (4, 5), (5, 4), (5, 5)]
+        if (r, c) in center:
+            return 20
+        elif 3 <= r <= 6 and 3 <= c <= 6:
+            return 10
+        else:
+            return max(0, 6 - (abs(r - 4.5) + abs(c - 4.5)))
 
     def chain_score(self, board, r, c, color):
-        score = 0
+        total_score = 0
         for dx, dy in [(0, 1), (1, 0), (1, 1), (1, -1)]:
             count = 1
+            blocks = 0  # 记录两端被阻断的数量
+
+            # 正向数子
             for i in range(1, 5):
                 x, y = r + dx * i, c + dy * i
-                if 0 <= x < 10 and 0 <= y < 10 and board[x][y] == color:
-                    count += 1
+                if 0 <= x < 10 and 0 <= y < 10:
+                    if board[x][y] == color:
+                        count += 1
+                    elif board[x][y] == '0':
+                        break
+                    else:
+                        blocks += 1
+                        break
                 else:
-                    break
-            for i in range(1, 5):
-                x, y = r - dx * i, c - dy * i
-                if 0 <= x < 10 and 0 <= y < 10 and board[x][y] == color:
-                    count += 1
-                else:
+                    blocks += 1
                     break
 
-            if count >= 4:
-                score += 100
-            elif count == 3:
-                score += 30
-            elif count == 2:
-                score += 10
-        return score
+            # 反向数子
+            for i in range(1, 5):
+                x, y = r - dx * i, c - dy * i
+                if 0 <= x < 10 and 0 <= y < 10:
+                    if board[x][y] == color:
+                        count += 1
+                    elif board[x][y] == '0':
+                        break
+                    else:
+                        blocks += 1
+                        break
+                else:
+                    blocks += 1
+                    break
+
+            # 评分逻辑：考虑连子长度和封堵情况
+            if count >= 5:
+                total_score += 1000  # 五连直接胜利（虽然规则可能限制）
+            elif count == 4 and blocks == 0:
+                total_score += 500  # 活四
+            elif count == 4 and blocks == 1:
+                total_score += 100  # 冲四
+            elif count == 3 and blocks == 0:
+                total_score += 60  # 活三
+            elif count == 3 and blocks == 1:
+                total_score += 20  # 死三
+            elif count == 2 and blocks == 0:
+                total_score += 10  # 活二
+            elif count == 2 and blocks == 1:
+                total_score += 3  # 死二
+
+        return total_score
 
     def block_enemy_score(self, board, r, c, enemy_color):
         score = 0
