@@ -14,35 +14,6 @@ TTEntry = namedtuple('TTEntry', 'depth score flag best_move')
 # flag: 'EXACT', 'LOWER', 'UPPER'
 
 
-def score_hotb_control(board, color):
-    control = sum(1 for r, c in HOTB_COORDS if board[r][c] == color)
-    return control * 25  # 满分 100
-
-
-def score_friendly_chain(board, color):
-    max_chain = 0
-    for r in range(10):
-        for c in range(10):
-            if board[r][c] != color:
-                continue
-            for dx, dy in [(0, 1), (1, 0), (1, 1), (1, -1)]:
-                count = 1
-                for i in range(1, 5):
-                    x, y = r + dx * i, c + dy * i
-                    if 0 <= x < 10 and 0 <= y < 10 and board[x][y] == color:
-                        count += 1
-                    else:
-                        break
-                max_chain = max(max_chain, count)
-    if max_chain >= 4:
-        return 100
-    elif max_chain == 3:
-        return 30
-    elif max_chain == 2:
-        return 10
-    return 0
-
-
 class myAgent(Agent):
     def __init__(self, _id):
         super().__init__(_id)
@@ -53,18 +24,6 @@ class myAgent(Agent):
     def SelectAction(self, actions, game_state):
         self.start_time = time.time()
         return self.a_star(game_state, actions)
-
-    def simulate_action(self, state, action):
-        """
-        统一调用规则引擎生成下一个状态，确保手牌、回合、棋盘等都正确更新。
-        """
-        # 如果 GameRule 提供 nextState 接口，直接用它
-        return self.rule.nextState(state, action)
-        #
-        # 如果只有 applyAction（原地修改）：
-        # new_state = state.copy()  # 或者自定义浅拷贝
-        # self.rule.applyAction(new_state, action)
-        # return new_state
 
     def a_star(self, initial_state, candidate_moves):
         pending = []
@@ -143,14 +102,35 @@ class myAgent(Agent):
 
         return 100 - score
 
-    def center_bias(self, r, c):
-        center = [(4, 4), (4, 5), (5, 4), (5, 5)]
-        if (r, c) in center:
-            return 20
+    def center_bias(self, r, c, board=None, color=None):
+        # 计算距离中心的曼哈顿距离
+        distance = abs(r - 4.5) + abs(c - 4.5)
+        score = 0
+
+        # HOTB 四格加分（目标区域）
+        if (r, c) in [(4, 4), (4, 5), (5, 4), (5, 5)]:
+            score += 30  # 高优先
+
+        # 中心 3x3 区域（战略中心）
         elif 3 <= r <= 6 and 3 <= c <= 6:
-            return 10
-        else:
-            return max(0, 6 - (abs(r - 4.5) + abs(c - 4.5)))
+            score += 15
+
+        # 中心 5x5 环带区域
+        elif 2 <= r <= 7 and 2 <= c <= 7:
+            score += 5
+
+        # 曼哈顿距离控制（边缘惩罚）
+        score += max(0, int(6 - distance))
+
+        # （可选）未来潜力加分：是否有邻近的 HOTB 可占格
+        if board is not None and color is not None:
+            for dx, dy in [(0, 1), (1, 0), (-1, 0), (0, -1)]:
+                x, y = r + dx, c + dy
+                if 0 <= x < 10 and 0 <= y < 10 and (x, y) in [(4, 4), (4, 5), (5, 4), (5, 5)]:
+                    if board[x][y] == '0':
+                        score += 5  # 邻近 HOTB 可推进，加分
+
+        return score
 
     def chain_score(self, board, r, c, color):
         total_score = 0
@@ -221,7 +201,25 @@ class myAgent(Agent):
         return score
 
     def hotb_score(self, board, color):
-        return 100 if all(board[x][y] == color for x, y in HOTB_COORDS) else 0
+        hotb_coords = [(4, 4), (4, 5), (5, 4), (5, 5)]
+        enemy = 'r' if color == 'b' else 'b'
+
+        score = 0
+        full_control = True
+        for r, c in hotb_coords:
+            if board[r][c] == color:
+                score += 25  # 每格加 25
+            elif board[r][c] == enemy:
+                score -= 40  # 被敌人占据惩罚
+                full_control = False
+            else:
+                full_control = False
+
+        # 若完全控制，额外奖励
+        if full_control:
+            score += 50
+
+        return score
 
     def evaluate_state(self, state, action):
         agent = state.agents[self.id]
@@ -236,60 +234,66 @@ class myAgent(Agent):
         enemy_color = 'r' if my_color == 'b' else 'b'
 
         score = 0
-        score += score_friendly_chain(board, my_color)
+        score += self.score_friendly_chain(board, my_color)
         score += self.score_enemy_threat(board, enemy_color)
-        score += score_hotb_control(board, my_color)
+        score += self.score_hotb_control(board, my_color)
+        # score += self.score_board_mobility(board, my_color)  # 可选
 
         return score
 
+    def score_friendly_chain(self, board, color):
+        max_chain = 0
+        for r in range(10):
+            for c in range(10):
+                if board[r][c] != color:
+                    continue
+                for dx, dy in [(0, 1), (1, 0), (1, 1), (1, -1)]:
+                    count = 1
+                    for i in range(1, 5):
+                        x, y = r + dx * i, c + dy * i
+                        if 0 <= x < 10 and 0 <= y < 10 and board[x][y] == color:
+                            count += 1
+                        else:
+                            break
+                    max_chain = max(max_chain, count)
+        if max_chain >= 4:
+            return 100
+        elif max_chain == 3:
+            return 30
+        elif max_chain == 2:
+            return 10
+        return 0
+
     def score_enemy_threat(self, board, enemy_color):
-        threat = 0
+        threat_score = 0
         for r in range(10):
             for c in range(10):
                 if board[r][c] != enemy_color:
                     continue
                 for dx, dy in [(0, 1), (1, 0), (1, 1), (1, -1)]:
-                    total_chain, blocked_ends = 1, 0
-                    # 正向扫描
+                    count = 1
                     for i in range(1, 5):
                         x, y = r + dx * i, c + dy * i
-                        if not (0 <= x < 10 and 0 <= y < 10):
-                            blocked_ends += 1;
-                            break
-                        if board[x][y] == enemy_color:
-                            total_chain += 1
-                        elif board[x][y] != '0':
-                            blocked_ends += 1;
-                            break
+                        if 0 <= x < 10 and 0 <= y < 10 and board[x][y] == enemy_color:
+                            count += 1
                         else:
                             break
-                    # 反向扫描
-                    for i in range(1, 5):
-                        x, y = r - dx * i, c - dy * i
-                        if not (0 <= x < 10 and 0 <= y < 10):
-                            blocked_ends += 1;
-                            break
-                        if board[x][y] == enemy_color:
-                            total_chain += 1
-                        elif board[x][y] != '0':
-                            blocked_ends += 1;
-                            break
-                        else:
-                            break
+                    if count >= 3:
+                        threat_score -= 50  # 威胁越大，分越低（惩罚）
+        return threat_score
 
-                    # 根据连子长度+封堵端数给分（负分惩罚）
-                    if total_chain >= 5:
-                        threat += 1000  # 对手赢定
-                    elif total_chain == 4:
-                        # 冲四或活四，都要强力封堵
-                        threat += 500
-                    elif total_chain == 3 and blocked_ends == 0:
-                        threat += 200  # 活三
-                    elif total_chain == 3 and blocked_ends == 1:
-                        threat += 80  # 死三
-                    elif total_chain == 2 and blocked_ends == 0:
-                        threat += 20  # 活二
-        return -threat  # 返回负值，令启发/评估更倾向于封堵这些高威胁
+    def score_hotb_control(self, board, color):
+        control = sum(1 for r, c in HOTB_COORDS if board[r][c] == color)
+        return control * 25  # 满分 100
+
+    # 可选项：根据当前颜色控制的空位数量给加分
+    def score_board_mobility(self, board, color):
+        count = 0
+        for r in range(10):
+            for c in range(10):
+                if board[r][c] == '0':  # 假设空位是 0 字符
+                    count += 1
+        return count // 5
 
     def board_hash(self, state):
         return tuple(tuple(row) for row in state.board.chips)
