@@ -21,7 +21,7 @@ CANDIDATE_LIMIT = 8  # Number of top actions to consider in MCTS
 
 
 class GamePhaseAnalyzer:
-    """Intelligent game phase detection for dynamic strategy adaptation"""
+    """Intelligent game phase detection for dynamic strategy adaptation """
 
     @staticmethod
     def analyze_game_phase(state):
