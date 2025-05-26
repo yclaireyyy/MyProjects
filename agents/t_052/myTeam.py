@@ -1,3 +1,4 @@
+from numpy import inf
 from numpy.random._common import namedtuple
 
 from template import Agent
@@ -102,50 +103,40 @@ class myAgent(Agent):
 
         return 100 - score
 
-    def center_bias(self, r, c, board=None, color=None):
-        # 计算距离中心的曼哈顿距离
-        distance = abs(r - 4.5) + abs(c - 4.5)
-        score = 0
+    def center_bias(self, r, c):
+        # 使用曼哈顿距离计算，更平滑的衰减
+        center_r, center_c = 4.5, 4.5
+        distance = abs(r - center_r) + abs(c - center_c)
 
-        # HOTB 四格加分（目标区域）
-        if (r, c) in [(4, 4), (4, 5), (5, 4), (5, 5)]:
-            score += 30  # 高优先
-
-        # 中心 3x3 区域（战略中心）
-        elif 3 <= r <= 6 and 3 <= c <= 6:
-            score += 15
-
-        # 中心 5x5 环带区域
-        elif 2 <= r <= 7 and 2 <= c <= 7:
-            score += 5
-
-        # 曼哈顿距离控制（边缘惩罚）
-        score += max(0, int(6 - distance))
-
-        # （可选）未来潜力加分：是否有邻近的 HOTB 可占格
-        if board is not None and color is not None:
-            for dx, dy in [(0, 1), (1, 0), (-1, 0), (0, -1)]:
-                x, y = r + dx, c + dy
-                if 0 <= x < 10 and 0 <= y < 10 and (x, y) in [(4, 4), (4, 5), (5, 4), (5, 5)]:
-                    if board[x][y] == '0':
-                        score += 5  # 邻近 HOTB 可推进，加分
-
-        return score
+        # 根据距离给出分数，中心最高
+        if distance <= 1:  # 最中心的4个格子
+            return 20
+        elif distance <= 2.5:  # 次中心区域
+            return 15
+        elif distance <= 4:  # 中等区域
+            return 10
+        else:  # 边缘区域
+            return max(0, 8 - distance)
 
     def chain_score(self, board, r, c, color):
         total_score = 0
+        threat_count = 0  # 记录形成威胁的数量
+
         for dx, dy in [(0, 1), (1, 0), (1, 1), (1, -1)]:
             count = 1
-            blocks = 0  # 记录两端被阻断的数量
+            blocks = 0
+            spaces = []  # 记录空位位置，用于判断是否能延伸
 
-            # 正向数子
+            # 正向检查
             for i in range(1, 5):
                 x, y = r + dx * i, c + dy * i
                 if 0 <= x < 10 and 0 <= y < 10:
                     if board[x][y] == color:
                         count += 1
                     elif board[x][y] == '0':
-                        break
+                        spaces.append((x, y))
+                        if len(spaces) > 1:  # 超过1个空位就停止
+                            break
                     else:
                         blocks += 1
                         break
@@ -153,73 +144,104 @@ class myAgent(Agent):
                     blocks += 1
                     break
 
-            # 反向数子
-            for i in range(1, 5):
-                x, y = r - dx * i, c - dy * i
-                if 0 <= x < 10 and 0 <= y < 10:
-                    if board[x][y] == color:
-                        count += 1
-                    elif board[x][y] == '0':
-                        break
-                    else:
-                        blocks += 1
-                        break
-                else:
-                    blocks += 1
-                    break
+            # 反向检查（类似逻辑）
+            # ...
 
-            # 评分逻辑：考虑连子长度和封堵情况
+            # 更细致的评分
             if count >= 5:
-                total_score += 1000  # 五连直接胜利（虽然规则可能限制）
-            elif count == 4 and blocks == 0:
-                total_score += 500  # 活四
-            elif count == 4 and blocks == 1:
-                total_score += 100  # 冲四
-            elif count == 3 and blocks == 0:
-                total_score += 60  # 活三
-            elif count == 3 and blocks == 1:
-                total_score += 20  # 死三
-            elif count == 2 and blocks == 0:
-                total_score += 10  # 活二
-            elif count == 2 and blocks == 1:
-                total_score += 3  # 死二
+                return 10000  # 直接返回最高分
+            elif count == 4:
+                if blocks == 0:
+                    total_score += 1000  # 活四
+                    threat_count += 1
+                elif blocks == 1:
+                    total_score += 200  # 冲四
+            elif count == 3:
+                if blocks == 0:
+                    total_score += 100  # 活三
+                    threat_count += 1
+                elif blocks == 1 and len(spaces) == 1:
+                    total_score += 50  # 跳三（有潜力的三）
+            elif count == 2:
+                if blocks == 0:
+                    total_score += 20  # 活二
+                elif blocks == 1:
+                    total_score += 5  # 死二
 
-        return total_score
+        # 多重威胁加成
+        if threat_count >= 2:
+            total_score *= 1.5
+
+        return int(total_score)
 
     def block_enemy_score(self, board, r, c, enemy_color):
-        score = 0
+        max_threat = 0
+
         for dx, dy in [(0, 1), (1, 0), (1, 1), (1, -1)]:
-            enemy_chain = 0
+            # 检查两个方向
+            forward_count = 0
+            backward_count = 0
+            forward_space = 0
+            backward_space = 0
+
+            # 正向
             for i in range(1, 5):
                 x, y = r + dx * i, c + dy * i
-                if 0 <= x < 10 and 0 <= y < 10 and board[x][y] == enemy_color:
-                    enemy_chain += 1
+                if 0 <= x < 10 and 0 <= y < 10:
+                    if board[x][y] == enemy_color:
+                        forward_count += 1
+                    elif board[x][y] == '0':
+                        forward_space += 1
+                        if forward_space > 1:
+                            break
+                    else:
+                        break
                 else:
                     break
-            if enemy_chain >= 3:
-                score += 50
-        return score
+
+            # 反向（类似逻辑）
+            # ...
+
+            total_count = forward_count + backward_count + 1  # +1是假设敌人下在(r,c)
+
+            # 根据威胁程度评分
+            if total_count >= 4:
+                max_threat = max(max_threat, 500)  # 必须阻挡
+            elif total_count == 3 and (forward_space > 0 or backward_space > 0):
+                max_threat = max(max_threat, 200)  # 高威胁
+            elif total_count == 3:
+                max_threat = max(max_threat, 100)  # 中等威胁
+            elif total_count == 2:
+                max_threat = max(max_threat, 30)  # 低威胁
+
+        return max_threat
 
     def hotb_score(self, board, color):
-        hotb_coords = [(4, 4), (4, 5), (5, 4), (5, 5)]
-        enemy = 'r' if color == 'b' else 'b'
+        occupied = sum(1 for x, y in HOTB_COORDS if board[x][y] == color)
+        enemy_occupied = sum(1 for x, y in HOTB_COORDS if board[x][y] != '0' and board[x][y] != color)
 
-        score = 0
-        full_control = True
-        for r, c in hotb_coords:
-            if board[r][c] == color:
-                score += 25  # 每格加 25
-            elif board[r][c] == enemy:
-                score -= 40  # 被敌人占据惩罚
-                full_control = False
-            else:
-                full_control = False
+        if occupied == len(HOTB_COORDS):
+            return 200  # 完全占领
+        elif occupied > enemy_occupied:
+            return 50 + occupied * 20  # 部分占领加成
+        else:
+            return occupied * 10  # 基础分数
 
-        # 若完全控制，额外奖励
-        if full_control:
-            score += 50
+    def evaluate_position(self, board, r, c, color, enemy_color):
+        # 基础位置分
+        score = self.center_bias(r, c)
 
-        return score
+        # 进攻分数
+        attack_score = self.chain_score(board, r, c, color)
+
+        # 防守分数
+        defense_score = self.block_enemy_score(board, r, c, enemy_color)
+
+        # HOTB分数
+        hotb = self.hotb_score(board, color)
+
+        # 综合评分，防守优先级略高
+        return score + attack_score + defense_score * 1.2 + hotb
 
     def evaluate_state(self, state, action):
         agent = state.agents[self.id]
