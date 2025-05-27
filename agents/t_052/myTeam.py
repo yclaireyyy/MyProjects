@@ -12,7 +12,7 @@ HOTB_COORDS = [(4, 4), (4, 5), (5, 4), (5, 5)]
 
 
 TTEntry = namedtuple('TTEntry', 'depth score flag best_move')
-# flag: 'EXACT', 'LOWER', 'UPPER'
+# flag: 'EXACT', 'LOWER', 'UPPER'00
 
 
 class myAgent(Agent):
