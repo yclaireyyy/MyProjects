@@ -212,9 +212,10 @@ class myAgent(Agent):
             elif total_count == 3:
                 max_threat = max(max_threat, 100)  # 中等威胁
             elif total_count == 2:
-                max_threat = max(max_threat, 30)  # 低威胁
+                max_threat = max(max_threat, 30)  # 低威胁000
 
         return max_threat
+
 
     def hotb_score(self, board, color):
         occupied = sum(1 for x, y in HOTB_COORDS if board[x][y] == color)
