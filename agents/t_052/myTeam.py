@@ -1,7 +1,6 @@
 from collections import namedtuple
 from template import Agent
 from Sequence.sequence_model import SequenceGameRule as GameRule
-from Sequence.sequence_model import COORDS
 import heapq
 import time
 import itertools
@@ -48,14 +47,77 @@ class myAgent(Agent):
             'strategic_position': 2.0,  # 战略位置价值
             'blocking_value': 2.5,  # 阻断敌方的价值
             'flexibility': 1.0,  # 未来灵活性
-            'opponent_denial': 2.8  # 拒绝对手获得的价值
+            'opponent_denial': 2.8, # 拒绝对手获得的价值
+            'opponent_expectation': 2.2
         }
+        self.evaluation_weights: {
+            # 连子评估权重
+            'chain_win': 1.0,  # 获胜连子的权重
+            'chain_threat_4': 1.0,  # 4连威胁权重
+            'chain_threat_3': 1.0,  # 3连威胁权重
+            'chain_threat_2': 1.0,  # 2连威胁权重
 
-        self.COORDS = COORDS
+            # 复合威胁权重
+            'compound_bonus': 1.0,  # 复合威胁奖励权重
+            'fork_attack': 1.0,  # 叉攻奖励权重
+            'chain_threat': 1.0,  # 连环威胁权重
 
-        # 启动时预计算优化
-        if not self.startup_time_used:
-            self._precompute_startup_data()
+            # 阻断评估权重
+            'block_enemy_win': 1.0,  # 阻断对手获胜权重
+            'block_enemy_threat': 1.0,  # 阻断对手威胁权重
+            'block_compound': 1.0,  # 阻断复合威胁权重
+
+            # 位置价值权重
+            'hotb_control': 1.0,  # HOTB控制权重
+            'center_bias': 1.0,  # 中心偏好权重
+            'corner_strategic': 1.0,  # 角落战略权重
+
+            # 全局策略权重
+            'tempo': 1.0,  # 节奏控制权重
+            'space_control': 1.0,  # 空间控制权重
+            'flexibility': 1.0  # 灵活性权重
+        }
+        # 当前使用的权重（可以在游戏过程中调整）
+        self.current_weights = self.deep_copy_weights(self.base_weights)
+
+        # 权重学习系统
+        self.weight_learning = WeightLearningSystem()
+        self.game_statistics = GameStatistics()
+
+        # 如果存在历史学习数据，加载优化后的权重
+        self.load_optimized_weights()
+
+    def load_optimized_weights(self):
+        """
+        加载经过优化的权重配置
+        这里可以从文件读取，或从数据库加载经过训练的权重
+        """
+        try:
+            # 模拟从文件或数据库加载优化权重的过程
+            # 在实际应用中，这些权重来自于大量对局的统计分析
+            optimized_adjustments = {
+                'evaluation_weights': {
+                    'chain_threat_4': 1.2,  # 经过学习发现4连威胁应该更重视
+                    'fork_attack': 1.5,  # 叉攻的价值被低估了
+                    'block_compound': 1.3,  # 阻断复合威胁很重要
+                    'hotb_control': 1.1,  # HOTB控制略微提升
+                    'tempo': 0.9  # 节奏控制权重略微下调
+                }
+            }
+
+            # 应用优化调整
+            self.apply_weight_adjustments(optimized_adjustments)
+
+        except Exception as e:
+            pass  # 如果加载失败，使用默认权重
+
+    def apply_weight_adjustments(self, adjustments):
+        """应用权重调整"""
+        for category, weights in adjustments.items():
+            if category in self.current_weights:
+                for weight_name, adjustment in weights.items():
+                    if weight_name in self.current_weights[category]:
+                        self.current_weights[category][weight_name] *= adjustment
 
     def _precompute_startup_data(self):
         """利用15秒启动时间进行预计算优化"""
@@ -180,7 +242,7 @@ class myAgent(Agent):
             return self.place_strategy(actions, game_state)
         else:
             # 默认策略：如果无法识别类型，使用原始放牌策略
-            return self.original_place_strategy(actions, game_state)
+            return self.place_strategy(actions, game_state)
 
     def identify_action_type(self, actions, game_state):
         """
@@ -633,21 +695,6 @@ class myAgent(Agent):
 
         return threat_level
 
-    def original_place_strategy(self, actions, game_state):
-        # 第一层防护：快速启发式决策（保底方案）
-        quick_decision = self.get_quick_decision(actions, game_state)
-
-        if not self.time_manager.should_continue_phase('heuristic_search'):
-            return quick_decision
-
-        # 第二层：标准A*搜索（主要决策）
-        try:
-            better_decision = self.decision_making(game_state, actions, quick_decision)
-            return better_decision
-        except Exception as e:
-            # 如果搜索过程中出现任何问题，立即返回保底决策
-            return quick_decision
-
     def get_quick_decision(self, actions, game_state):
         """
         快速决策：150毫秒内必须完成的保底方案
@@ -855,24 +902,69 @@ class myAgent(Agent):
         board[r][c] = color
         # 获取当前游戏阶段的权重
         phase_weights = self.get_current_phase_weights(board)
+        eval_weights = self.current_weights['evaluation_weights']
         score = 0
-        # 改进：所有评分函数都考虑角落万能位置
-        score += self.center_bias(r, c) * phase_weights['center']
-        score += self.chain_score(board, r, c, color) * phase_weights['chain']
-        score += self.block_enemy_score(board, r, c, enemy) * phase_weights['block']
-        score += self.hotb_score(board, color)
-        score += self.corner_strategic_value(r, c, board, color) * phase_weights['corner']
+        # 应用动态权重的评分
+        center_score = self.center_bias(r, c, board, color)
+        score += center_score * phase_weights['center'] * eval_weights['center_bias']
 
-        # 新增：检查获胜潜力并给予额外优先级
-        win_potential_bonus = 0
-        for dx, dy in [(0, 1), (1, 0), (1, 1), (1, -1)]:
-            if self.check_win_potential(board, r, c, dx, dy, color):
-                # 发现获胜潜力，大幅提升这个走法的优先级
-                win_potential_bonus += 200  # 这会显著降低A*的成本值
-                break  # 只要发现一个方向有获胜潜力就足够了
+        chain_score = self.chain_score(board, r, c, color)
+        score += chain_score * phase_weights['chain'] * eval_weights.get('chain_threat_4', 1.0)
 
-        # 转换为A*成本（越小越好），获胜潜力会大幅降低成本
-        return max(1, 1000 - score - win_potential_bonus)
+        block_score = self.block_enemy_score(board, r, c, enemy)
+        score += block_score * phase_weights['block'] * eval_weights['block_enemy_threat']
+
+        hotb_score = self.hotb_score(board, color)
+        score += hotb_score * eval_weights['hotb_control']
+
+        corner_score = self.corner_strategic_value(r, c, board, color)
+        score += corner_score * phase_weights['corner'] * eval_weights['corner_strategic']
+
+        # 新增：节奏和空间控制评估
+        tempo_score = self.calculate_tempo_value(board, r, c, color, enemy)
+        score += tempo_score * eval_weights['tempo']
+
+        space_control_score = self.calculate_space_control_value(board, r, c, color)
+        score += space_control_score * eval_weights['space_control']
+
+        return max(1, 1000 - score)
+
+    def calculate_space_control_value(self, board, r, c, color):
+        """
+        计算空间控制价值：这个位置能控制多少周围空间
+        """
+        control_value = 0
+        controlled_spaces = 0
+
+        # 计算能影响的空白位置数量
+        for dr in range(-2, 3):
+            for dc in range(-2, 3):
+                if dr == 0 and dc == 0:
+                    continue
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < 10 and 0 <= nc < 10 and board[nr][nc] == '0':
+                    # 距离越近，控制力越强
+                    distance = max(abs(dr), abs(dc))
+                    control_strength = max(0, 3 - distance)
+                    controlled_spaces += control_strength
+
+        control_value = controlled_spaces * 15
+
+        # 检查是否控制了关键通道
+        if self.controls_key_passages(board, r, c, color):
+            control_value += 100
+
+        return control_value
+
+    def controls_key_passages(self, board, r, c, color):
+        """检查是否控制了关键通道（连接重要区域的路径）"""
+        # 检查是否在HOTB区域之间的连接路径上
+        hotb_connections = 0
+        for hr, hc in HOTB_COORDS:
+            if abs(r - hr) <= 2 and abs(c - hc) <= 2:
+                hotb_connections += 1
+
+        return hotb_connections >= 2
 
     def center_bias(self, r, c, board=None, color=None):
         # 使用预计算的基础价值
@@ -1329,3 +1421,145 @@ class TimeManager:
     def is_emergency_mode(self):
         """检查是否进入紧急模式（时间即将耗尽）"""
         return self.get_remaining_time() < 0.1
+
+
+class WeightLearningSystem:
+    """
+    权重学习系统：基于游戏结果和关键决策点来优化权重
+    """
+
+    def __init__(self):
+        self.decision_records = []  # 记录关键决策点
+        self.game_outcomes = []  # 记录游戏结果
+        self.learning_rate = 0.1  # 学习率
+
+    def record_critical_decision(self, game_state, action, evaluation_details):
+        """记录关键决策点的详细信息"""
+        decision_record = {
+            'board_state': self.compress_board_state(game_state.board.chips),
+            'action': action,
+            'evaluation_breakdown': evaluation_details,
+            'game_phase': self.determine_game_phase(game_state.board.chips),
+            'timestamp': time.time()
+        }
+        self.decision_records.append(decision_record)
+
+    def record_game_outcome(self, won, final_score_difference):
+        """记录游戏结果"""
+        outcome = {
+            'won': won,
+            'score_difference': final_score_difference,
+            'decisions': self.decision_records.copy()
+        }
+        self.game_outcomes.append(outcome)
+        self.decision_records.clear()  # 清空当前游戏的决策记录
+
+    def compress_board_state(self, board):
+        """压缩棋盘状态以节省存储空间"""
+        return hash(str(board))
+
+    def determine_game_phase(self, board):
+        """确定游戏阶段"""
+        total_pieces = sum(1 for row in board for cell in row if cell != '0')
+        if total_pieces < 12:
+            return 'opening'
+        elif total_pieces < 35:
+            return 'middle'
+        else:
+            return 'endgame'
+
+    def analyze_weight_performance(self):
+        """
+        分析权重性能：找出哪些权重配置导致了更好的结果
+        这是一个简化的分析方法，实际应用中可能需要更复杂的机器学习算法
+        """
+        if len(self.game_outcomes) < 10:
+            return None  # 样本不足
+
+        # 分析获胜游戏和失败游戏的权重使用模式
+        winning_patterns = []
+        losing_patterns = []
+
+        for outcome in self.game_outcomes:
+            if outcome['won']:
+                winning_patterns.extend(outcome['decisions'])
+            else:
+                losing_patterns.extend(outcome['decisions'])
+
+        # 简化的权重优化建议
+        optimization_suggestions = self.generate_optimization_suggestions(
+            winning_patterns, losing_patterns
+        )
+
+        return optimization_suggestions
+
+    def generate_optimization_suggestions(self, winning_patterns, losing_patterns):
+        """基于成功和失败模式生成权重优化建议"""
+        suggestions = {}
+
+        # 这里是一个简化的示例
+        # 实际应用中，你可能需要使用更复杂的统计分析或机器学习方法
+
+        if len(winning_patterns) > len(losing_patterns):
+            # 如果获胜游戏较多，提取成功模式的特征
+            suggestions['chain_threat_4'] = 1.1  # 稍微提高4连威胁的重视度
+            suggestions['fork_attack'] = 1.2  # 提高叉攻的权重
+        else:
+            # 如果失败较多，采用更保守的策略
+            suggestions['block_enemy_threat'] = 1.2  # 更重视防守
+            suggestions['space_control'] = 1.1  # 更重视空间控制
+
+        return suggestions
+
+
+# 游戏统计系统
+class GameStatistics:
+    """记录和分析游戏统计信息"""
+
+    def __init__(self):
+        self.move_count = 0
+        self.decision_times = []
+        self.evaluation_history = []
+
+    def record_decision_time(self, time_taken):
+        """记录决策时间"""
+        self.decision_times.append(time_taken)
+
+    def record_evaluation(self, position, evaluation_score):
+        """记录位置评估分数"""
+        self.evaluation_history.append({
+            'position': position,
+            'score': evaluation_score,
+            'move_number': self.move_count
+        })
+        self.move_count += 1
+
+    def get_performance_metrics(self):
+        """获取性能指标"""
+        if not self.decision_times:
+            return {}
+
+        return {
+            'average_decision_time': sum(self.decision_times) / len(self.decision_times),
+            'max_decision_time': max(self.decision_times),
+            'total_moves': self.move_count,
+            'evaluation_trend': self.analyze_evaluation_trend()
+        }
+
+    def analyze_evaluation_trend(self):
+        """分析评估分数的趋势"""
+        if len(self.evaluation_history) < 5:
+            return "insufficient_data"
+
+        recent_scores = [e['score'] for e in self.evaluation_history[-5:]]
+        early_scores = [e['score'] for e in self.evaluation_history[:5]]
+
+        recent_avg = sum(recent_scores) / len(recent_scores)
+        early_avg = sum(early_scores) / len(early_scores)
+
+        if recent_avg > early_avg * 1.1:
+            return "improving"
+        elif recent_avg < early_avg * 0.9:
+            return "declining"
+        else:
+            return "stable"
