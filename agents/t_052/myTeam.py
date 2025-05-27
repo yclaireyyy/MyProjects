@@ -1,7 +1,7 @@
 from collections import namedtuple
 from template import Agent
 from Sequence.sequence_model import SequenceGameRule as GameRule
-from Sequence.sequence_utils import COORDS
+from Sequence.sequence_model import COORDS
 import heapq
 import time
 import itertools
@@ -22,8 +22,6 @@ BOARD = [['jk','2s','3s','4s','5s','6s','7s','8s','9s','jk'],
          ['kc','8s','tc','qc','kc','ac','ad','kd','4h','4d'],
          ['ac','7s','6s','5s','4s','3s','2s','2h','3h','5d'],
          ['jk','ad','kd','qd','td','9d','8d','7d','6d','jk']]
-
-COORDS = {}
 
 
 TTEntry = namedtuple('TTEntry', 'depth score flag best_move')
