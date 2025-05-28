@@ -19,7 +19,6 @@ If you use MCTS, then, you can explain about what tree policy/simulation policy 
  
 ### Motivation  
 
-
 [Back to top](#table-of-contents)
 
 ### Application  
