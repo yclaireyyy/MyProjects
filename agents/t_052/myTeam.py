@@ -16,13 +16,14 @@ TTEntry = namedtuple('TTEntry', 'depth score flag best_move')
 
 
 # ================================================================================================
-# 核心配置类 - 游戏参数和权重管理
+# 优化配置类 - 预计算和快速访问
 # ================================================================================================
 
 class GameConfig:
-    """游戏配置和权重管理"""
+    """游戏配置和权重管理 - 优化版"""
 
     def __init__(self):
+        # 预计算所有权重配置
         self.phase_weights = {
             'opening': {'center': 2.0, 'chain': 0.8, 'block': 0.5, 'corner': 1.5},
             'middle': {'center': 1.0, 'chain': 1.5, 'block': 1.2, 'corner': 1.8},
@@ -49,69 +50,50 @@ class GameConfig:
             'tempo_advantage_bonus': 300
         }
 
+        # 预计算核心数据
+        self._precompute_core_data()
+
+    def _precompute_core_data(self):
+        """预计算核心数据结构"""
+        self.CORNER_POSITIONS = [(0, 0), (0, 9), (9, 0), (9, 9)]
+        self.direction_vectors = [(0, 1), (1, 0), (1, 1), (1, -1)]
+
+        # 预计算位置价值
+        self.position_values = {}
+        for r in range(10):
+            for c in range(10):
+                value = 0
+                if (r, c) in HOTB_COORDS:
+                    value += 120
+                distance_to_center = abs(r - 4.5) + abs(c - 4.5)
+                value += max(0, 25 - distance_to_center * 2.5)
+                for corner_r, corner_c in self.CORNER_POSITIONS:
+                    corner_distance = max(abs(r - corner_r), abs(c - corner_c))
+                    if corner_distance <= 3:
+                        value += max(0, 20 - corner_distance * 5)
+                self.position_values[(r, c)] = value
+
 
 # ================================================================================================
-# 缓存和时间管理系统
+# 高效时间管理器
 # ================================================================================================
-
-class CacheManager:
-    """评估结果缓存管理"""
-
-    def __init__(self, max_size=2000):
-        self.cache = {}
-        self.max_size = max_size
-        self.hit_count = 0
-        self.total_count = 0
-
-    def get(self, board, action, cache_type='heuristic'):
-        try:
-            if not action.get('coords'):
-                return None
-            r, c = action['coords']
-            board_hash = self._get_board_hash(board)
-            cache_key = (board_hash, r, c, cache_type)
-
-            self.total_count += 1
-            if cache_key in self.cache:
-                self.hit_count += 1
-                return self.cache[cache_key]
-            return None
-        except:
-            return None
-
-    def set(self, board, action, result, cache_type='heuristic'):
-        try:
-            if not action.get('coords') or result is None:
-                return
-            r, c = action['coords']
-            board_hash = self._get_board_hash(board)
-            cache_key = (board_hash, r, c, cache_type)
-
-            if len(self.cache) >= self.max_size:
-                keys_to_remove = list(self.cache.keys())[:self.max_size // 3]
-                for key in keys_to_remove:
-                    del self.cache[key]
-
-            self.cache[cache_key] = result
-        except:
-            pass
-
-    def _get_board_hash(self, board):
-        return hash(''.join(''.join(row) for row in board))
-
 
 class TimeManager:
-    """时间管理系统"""
+    """优化时间管理系统 - 动态调整算法时间分配"""
 
     def __init__(self, total_time_limit=0.95):
         self.total_limit = total_time_limit
         self.start_time = None
-        self.safety_buffer = 0.05
-        self.phase_limits = {
-            'quick_decision': 0.15,
-            'heuristic_search': 0.50,
-            'monte_carlo': 0.80
+        self.safety_buffer = 0.03  # 减少安全缓冲，更积极使用时间
+
+        # 动态阶段时间分配
+        self.base_phase_limits = {
+            'quick_decision': 0.10,  # 快速决策
+            'astar_search': 0.45,  # A*搜索
+            'mcts_refinement': 0.85  # MCTS优化
         }
+
+        self.phase_limits = self.base_phase_limits.copy()
 
     def start_turn(self):
         self.start_time = time.time()
@@ -134,30 +116,85 @@ class TimeManager:
         elapsed = self.get_elapsed_time()
         return max(0, phase_limit - elapsed)
 
+    def adjust_phase_limits(self, complexity_factor):
+        """根据局面复杂度动态调整时间分配"""
+        if complexity_factor > 0.7:  # 复杂局面，更多时间给搜索
+            self.phase_limits = {
+                'quick_decision': 0.05,
+                'astar_search': 0.35,
+                'mcts_refinement': 0.85
+            }
+        elif complexity_factor < 0.3:  # 简单局面，快速决策
+            self.phase_limits = {
+                'quick_decision': 0.20,
+                'astar_search': 0.50,
+                'mcts_refinement': 0.80
+            }
+        else:
+            self.phase_limits = self.base_phase_limits.copy()
+
 
 # ================================================================================================
-# 棋盘分析和评估系统
+# 高效缓存管理器
+# ================================================================================================
+
+class CacheManager:
+    """轻量级缓存管理 - 只缓存高价值计算"""
+
+    def __init__(self, max_size=500):  # 减小缓存大小
+        self.eval_cache = {}  # 评估缓存
+        self.max_size = max_size
+        self.hit_count = 0
+        self.total_count = 0
+
+    def get_eval_cache(self, board_hash, coords):
+        """获取评估缓存"""
+        self.total_count += 1
+        cache_key = (board_hash, coords)
+        if cache_key in self.eval_cache:
+            self.hit_count += 1
+            return self.eval_cache[cache_key]
+        return None
+
+    def set_eval_cache(self, board_hash, coords, result):
+        """设置评估缓存"""
+        if len(self.eval_cache) >= self.max_size:
+            # 简单的FIFO清理
+            oldest_keys = list(self.eval_cache.keys())[:self.max_size // 4]
+            for key in oldest_keys:
+                del self.eval_cache[key]
+
+        cache_key = (board_hash, coords)
+        self.eval_cache[cache_key] = result
+
+    def _get_board_hash(self, board):
+        """快速棋盘哈希"""
+        return hash(''.join(''.join(row) for row in board))
+
+
+# ================================================================================================
+# 高效棋盘分析器
 # ================================================================================================
 
 class BoardAnalyzer:
-    """棋盘分析核心功能"""
+    """棋盘分析核心功能 - 内联优化版"""
 
     def __init__(self, config):
         self.config = config
-        self.CORNER_POSITIONS = [(0, 0), (0, 9), (9, 0), (9, 9)]
-        self.direction_vectors = [(0, 1), (1, 0), (1, 1), (1, -1)]
+        self.CORNER_POSITIONS = config.CORNER_POSITIONS
+        self.direction_vectors = config.direction_vectors
 
     def analyze_chain_pattern(self, board, r, c, dx, dy, color):
-        """角落感知的连子模式分析"""
-        count = 1  # 包含当前位置
+        """角落感知的连子模式分析 - 内联优化"""
+        count = 1
         openings = 0
 
-        # 正向计数
+        # 正向计数 - 内联优化
         pos_open = False
         for i in range(1, 5):
             x, y = r + dx * i, c + dy * i
             if 0 <= x < 10 and 0 <= y < 10:
-                if board[x][y] == color or self.is_corner_position(x, y):
+                if board[x][y] == color or (x, y) in self.CORNER_POSITIONS:
                     count += 1
                 elif board[x][y] == '0':
                     pos_open = True
@@ -167,12 +204,12 @@ class BoardAnalyzer:
             else:
                 break
 
-        # 负向计数
+        # 负向计数 - 内联优化
         neg_open = False
         for i in range(1, 5):
             x, y = r - dx * i, c - dy * i
             if 0 <= x < 10 and 0 <= y < 10:
-                if board[x][y] == color or self.is_corner_position(x, y):
+                if board[x][y] == color or (x, y) in self.CORNER_POSITIONS:
                     count += 1
                 elif board[x][y] == '0':
                     neg_open = True
@@ -185,135 +222,114 @@ class BoardAnalyzer:
         openings = (1 if pos_open else 0) + (1 if neg_open else 0)
         return count, openings
 
-    def check_corner_support(self, board, r, c, dx, dy, color):
-        """检查连子方向上是否包含角落位置"""
-        for direction in [1, -1]:
-            for i in range(1, 5):
-                x, y = r + dx * direction * i, c + dy * direction * i
-                if not (0 <= x < 10 and 0 <= y < 10):
-                    break
-                if self.is_corner_position(x, y):
-                    return True
-                if board[x][y] != color and board[x][y] != '0' and not self.is_corner_position(x, y):
-                    break
-        return False
-
     def is_corner_position(self, r, c):
         return (r, c) in self.CORNER_POSITIONS
 
 
+# ================================================================================================
+# 内联威胁分析器
+# ================================================================================================
+
 class ThreatAnalyzer:
-    """威胁分析专用类"""
+    """威胁分析专用类 - 内联优化"""
 
     def __init__(self, board_analyzer, config):
         self.board_analyzer = board_analyzer
         self.config = config
-
-    def classify_threat(self, count, openings, corner_support):
-        """威胁分类"""
-        if count >= 5:
-            return 'win'
-        elif count >= 4:
-            if openings >= 2 or (openings >= 1 and corner_support):
-                return 'critical_win'
-            elif openings >= 1 or corner_support:
-                return 'major_threat'
-            else:
-                return 'blocked_threat'
-        elif count >= 3:
-            if openings >= 2:
-                return 'double_threat'
-            elif openings >= 1 or corner_support:
-                return 'active_threat'
-            else:
-                return 'potential_threat'
-        elif count >= 2:
-            if openings >= 2:
-                return 'development'
-            else:
-                return 'weak_connection'
-        else:
-            return 'none'
-
-    def calculate_threat_urgency(self, threat_type, count, openings):
-        """计算威胁紧迫性"""
-        urgency_map = {
+        # 预计算威胁分类映射
+        self.threat_urgency_map = {
             'win': 10000, 'critical_win': 9000, 'major_threat': 7000,
             'double_threat': 5000, 'active_threat': 3000, 'blocked_threat': 1500,
             'potential_threat': 800, 'development': 400, 'weak_connection': 100,
             'none': 0
         }
-        return urgency_map.get(threat_type, 0)
 
-    def threat_analysis(self, board, r, c, color, enemy_color):
-        """完整威胁分析"""
-        threats = []
+    def classify_threat_fast(self, count, openings, corner_support):
+        """快速威胁分类 - 内联版本"""
+        if count >= 5:
+            return 'win', 10000
+        elif count >= 4:
+            if openings >= 2 or (openings >= 1 and corner_support):
+                return 'critical_win', 9000
+            elif openings >= 1 or corner_support:
+                return 'major_threat', 7000
+            else:
+                return 'blocked_threat', 1500
+        elif count >= 3:
+            if openings >= 2:
+                return 'double_threat', 5000
+            elif openings >= 1 or corner_support:
+                return 'active_threat', 3000
+            else:
+                return 'potential_threat', 800
+        elif count >= 2:
+            if openings >= 2:
+                return 'development', 400
+            else:
+                return 'weak_connection', 100
+        else:
+            return 'none', 0
+
+    def threat_analysis_fast(self, board, r, c, color, enemy_color):
+        """快速完整威胁分析"""
+        max_urgency = 0
+        threat_count = 0
+
         for dx, dy in self.board_analyzer.direction_vectors:
             temp_board = [row[:] for row in board]
             temp_board[r][c] = color
 
             count, openings = self.board_analyzer.analyze_chain_pattern(temp_board, r, c, dx, dy, color)
-            corner_support = self.board_analyzer.check_corner_support(temp_board, r, c, dx, dy, color)
+            corner_support = self._check_corner_support_fast(temp_board, r, c, dx, dy, color)
 
-            threat_type = self.classify_threat(count, openings, corner_support)
+            threat_type, urgency = self.classify_threat_fast(count, openings, corner_support)
             if threat_type != 'none':
-                threats.append({
-                    'direction': (dx, dy),
-                    'type': threat_type,
-                    'count': count,
-                    'openings': openings,
-                    'corner_support': corner_support,
-                    'urgency': self.calculate_threat_urgency(threat_type, count, openings)
-                })
-        return threats
+                max_urgency = max(max_urgency, urgency)
+                threat_count += 1
+
+        return max_urgency, threat_count
+
+    def _check_corner_support_fast(self, board, r, c, dx, dy, color):
+        """快速角落支持检查"""
+        for direction in [1, -1]:
+            for i in range(1, 5):
+                x, y = r + dx * direction * i, c + dy * direction * i
+                if not (0 <= x < 10 and 0 <= y < 10):
+                    break
+                if (x, y) in self.board_analyzer.CORNER_POSITIONS:
+                    return True
+                if board[x][y] != color and board[x][y] != '0' and (x, y) not in self.board_analyzer.CORNER_POSITIONS:
+                    break
+        return False
 
 
 # ================================================================================================
-# 评估系统
+# 高效位置评估器
 # ================================================================================================
 
 class PositionEvaluator:
-    """位置评估系统"""
+    """位置评估系统 - 高度优化版"""
 
     def __init__(self, board_analyzer, threat_analyzer, config):
         self.board_analyzer = board_analyzer
         self.threat_analyzer = threat_analyzer
         self.config = config
-        self._precompute_position_values()
+        self.position_values = config.position_values
 
-    def _precompute_position_values(self):
-        """预计算位置价值"""
-        self.position_values = {}
-        for r in range(10):
-            for c in range(10):
-                self.position_values[(r, c)] = self._calculate_base_position_value(r, c)
+    def fast_comprehensive_score(self, board, r, c, my_color, enemy_color):
+        """快速综合评分 - 一次性计算所有维度"""
+        # 基础位置价值
+        total_score = self.position_values.get((r, c), 0)
 
-    def _calculate_base_position_value(self, r, c):
-        """计算位置基础价值"""
-        value = 0
-        if (r, c) in HOTB_COORDS:
-            value += 120
-
-        distance_to_center = abs(r - 4.5) + abs(c - 4.5)
-        value += max(0, 25 - distance_to_center * 2.5)
-
-        for corner_r, corner_c in self.board_analyzer.CORNER_POSITIONS:
-            corner_distance = max(abs(r - corner_r), abs(c - corner_c))
-            if corner_distance <= 3:
-                value += max(0, 20 - corner_distance * 5)
-
-        return value
-
-    def chain_score(self, board, r, c, color):
-        """连子评分系统"""
-        total_score = 0
+        # 连子评分 - 内联计算
         for dx, dy in self.board_analyzer.direction_vectors:
-            count, openings = self.board_analyzer.analyze_chain_pattern(board, r, c, dx, dy, color)
-            corner_support = self.board_analyzer.check_corner_support(board, r, c, dx, dy, color)
+            count, openings = self.board_analyzer.analyze_chain_pattern(board, r, c, dx, dy, my_color)
+            corner_support = self.threat_analyzer._check_corner_support_fast(board, r, c, dx, dy, my_color)
 
-            # 指数级评分逻辑
+            # 内联指数级评分逻辑
             if count >= 5:
                 total_score += 100000
+                break  # 获胜就不需要继续
             elif count == 4:
                 if openings == 2:
                     total_score += 50000
@@ -336,96 +352,70 @@ class PositionEvaluator:
                     total_score += 800
                 else:
                     total_score += 100
-            elif count == 2:
+            elif count >= 2:
                 if openings >= 2:
                     total_score += 200
-                elif corner_support and openings >= 1:
-                    total_score += 150
-                elif openings >= 1:
-                    total_score += 80
                 elif corner_support:
-                    total_score += 100
+                    total_score += 150
                 else:
-                    total_score += 20
-            else:
-                if corner_support:
-                    total_score += 30
-                else:
-                    total_score += 10
+                    total_score += 80
+
+        # 阻断评分 - 内联计算
+        for dx, dy in self.board_analyzer.direction_vectors:
+            enemy_threat = self._calculate_enemy_threat_fast(board, r, c, dx, dy, enemy_color)
+            if enemy_threat >= 5:
+                total_score += 15000
+            elif enemy_threat >= 4:
+                total_score += 8000
+            elif enemy_threat >= 3:
+                total_score += 2000
+            elif enemy_threat >= 2:
+                total_score += 500
+
+        # HOTB控制 - 快速计算
+        if (r, c) in HOTB_COORDS:
+            total_score += self._hotb_bonus_fast(board, my_color, enemy_color)
 
         return total_score
 
-    def block_enemy_score(self, board, r, c, enemy_color):
-        """阻断敌方评分"""
-        score = 0
-        for dx, dy in self.board_analyzer.direction_vectors:
-            enemy_threat = self.calculate_enemy_threat_in_direction(board, r, c, dx, dy, enemy_color)
-
-            if enemy_threat >= 5:
-                score += 15000
-            elif enemy_threat >= 4:
-                score += 8000
-            elif enemy_threat >= 3:
-                score += 2000
-            elif enemy_threat >= 2:
-                score += 500
-
-        return score
-
-    def calculate_enemy_threat_in_direction(self, board, r, c, dx, dy, enemy_color):
-        """计算特定方向的敌方威胁等级"""
+    def _calculate_enemy_threat_fast(self, board, r, c, dx, dy, enemy_color):
+        """快速敌方威胁计算"""
         threat_level = 0
         for direction in [1, -1]:
             count = 0
             for i in range(1, 5):
                 x, y = r + dx * direction * i, c + dy * direction * i
                 if 0 <= x < 10 and 0 <= y < 10:
-                    cell_value = board[x][y]
-                    if x == r and y == c:
-                        cell_value = enemy_color
-                    if cell_value == enemy_color or self.board_analyzer.is_corner_position(x, y):
+                    if board[x][y] == enemy_color or (x, y) in self.board_analyzer.CORNER_POSITIONS:
                         count += 1
-                    elif cell_value == '0':
+                    elif board[x][y] == '0':
                         break
                     else:
                         break
                 else:
                     break
             threat_level = max(threat_level, count)
-
         return threat_level
 
-    def hotb_score(self, board, color):
-        """HOTB控制评分"""
-        enemy = 'r' if color == 'b' else 'b'
-        score = 0
-        controlled = 0
-        enemy_controlled = 0
+    def _hotb_bonus_fast(self, board, my_color, enemy_color):
+        """快速HOTB奖励计算"""
+        my_control = sum(1 for r, c in HOTB_COORDS if board[r][c] == my_color)
+        enemy_control = sum(1 for r, c in HOTB_COORDS if board[r][c] == enemy_color)
 
-        for r, c in HOTB_COORDS:
-            if board[r][c] == color:
-                controlled += 1
-                score += 50
-            elif board[r][c] == enemy:
-                enemy_controlled += 1
-                score -= 80
-
-        if controlled >= 3:
-            score += 200
-        if controlled == 4:
-            score += 500
-        if enemy_controlled >= 2:
-            score -= 150
-
-        return score
+        bonus = my_control * 50 - enemy_control * 80
+        if my_control >= 3:
+            bonus += 200
+        if my_control == 4:
+            bonus += 500
+        return bonus
 
 
 # ================================================================================================
-# 卡片选择系统
+# 快速卡片选择器
 # ================================================================================================
 
 class CardSelector:
-    """卡片选择策略"""
+    """卡片选择策略 - 高效版"""
 
     def __init__(self, board_analyzer, threat_analyzer, position_evaluator, config):
         self.board_analyzer = board_analyzer
@@ -434,7 +424,7 @@ class CardSelector:
         self.config = config
 
     def select_optimal_card(self, card_actions, game_state):
-        """选择最优卡片"""
+        """选择最优卡片 - 快速版本"""
         if not card_actions:
             return None
 
@@ -448,36 +438,47 @@ class CardSelector:
         best_card = None
         best_score = float('-inf')
 
-        for card_action in card_actions:
-            score = self._evaluate_card_value(card_action, board, my_color, enemy_color, game_state)
+        # 限制评估数量以节省时间
+        for card_action in card_actions[:min(len(card_actions), 5)]:
+            score = self._fast_card_evaluation(card_action, board, my_color, enemy_color, game_state)
             if score > best_score:
                 best_score = score
                 best_card = card_action
 
         return best_card or card_actions[0]
 
-    def _evaluate_card_value(self, card_action, board, my_color, enemy_color, game_state):
-        """评估单张卡片价值"""
+    def _fast_card_evaluation(self, card_action, board, my_color, enemy_color, game_state):
+        """快速卡片评估"""
         card_positions = self._get_card_board_positions(card_action, game_state)
         if not card_positions:
             return 0
 
         total_score = 0
 
-        # 胜利检查
-        if self._check_immediate_win_potential(card_positions, board, my_color):
-            return 100000
+        # 快速胜利检查
+        for r, c in card_positions[:3]:  # 只检查前3个位置
+            if 0 <= r < 10 and 0 <= c < 10 and board[r][c] == '0':
+                # 快速获胜检查
+                temp_board = [row[:] for row in board]
+                temp_board[r][c] = my_color
+                for dx, dy in self.board_analyzer.direction_vectors:
+                    count, _ = self.board_analyzer.analyze_chain_pattern(temp_board, r, c, dx, dy, my_color)
+                    if count >= 5:
+                        return 100000
 
-        # 各种评估维度
-        total_score += self._calculate_immediate_play_value(card_positions, board, my_color)
-        total_score += self._calculate_strategic_position_value(card_positions, board)
-        total_score += self._calculate_blocking_value(card_positions, board, enemy_color)
-        total_score += self._calculate_flexibility_value(card_positions, board)
+        # 快速综合评估
+        available_count = 0
+        for r, c in card_positions:
+            if 0 <= r < 10 and 0 <= c < 10 and board[r][c] == '0':
+                available_count += 1
+                total_score += self.position_evaluator.fast_comprehensive_score(board, r, c, my_color,
+                                                                                enemy_color) * 0.3
 
+        total_score += available_count * 50  # 灵活性奖励
         return total_score
 
     def _get_card_board_positions(self, card_action, game_state):
-        """获取卡片对应的棋盘位置"""
+        """获取卡片对应的棋盘位置 - 优化版"""
         try:
             card = None
             if isinstance(card_action, dict):
@@ -505,157 +506,128 @@ class CardSelector:
         """安全获取游戏状态信息"""
         try:
             agent = game_state.agents[self.board_analyzer.agent_id] if hasattr(self.board_analyzer, 'agent_id') else \
-            game_state.agents[0]
+                game_state.agents[0]
             board = game_state.board.chips
             return agent, board, True
         except (AttributeError, KeyError, IndexError):
             return None, None, False
 
-    def _check_immediate_win_potential(self, positions, board, color):
-        """检查立即获胜潜力"""
-        for r, c in positions:
-            if 0 <= r < 10 and 0 <= c < 10 and board[r][c] == '0':
-                temp_board = [row[:] for row in board]
-                temp_board[r][c] = color
-
-                for dx, dy in self.board_analyzer.direction_vectors:
-                    count, _ = self.board_analyzer.analyze_chain_pattern(temp_board, r, c, dx, dy, color)
-                    if count >= 5:
-                        return True
-        return False
-
-    def _calculate_immediate_play_value(self, positions, board, color):
-        """计算立即可用价值"""
-        value = 0
-        for r, c in positions:
-            if 0 <= r < 10 and 0 <= c < 10 and board[r][c] == '0':
-                position_value = self.position_evaluator.position_values.get((r, c), 0)
-                chain_value = self.position_evaluator.chain_score(board, r, c, color)
-                value += position_value + chain_value
-        return value
-
-    def _calculate_strategic_position_value(self, positions, board):
-        """计算战略位置价值"""
-        value = 0
-        for r, c in positions:
-            if 0 <= r < 10 and 0 <= c < 10:
-                value += self.position_evaluator.position_values.get((r, c), 0)
-        return value
-
-    def _calculate_blocking_value(self, positions, board, enemy_color):
-        """计算阻断价值"""
-        value = 0
-        for r, c in positions:
-            if 0 <= r < 10 and 0 <= c < 10 and board[r][c] == '0':
-                blocking_score = self.position_evaluator.block_enemy_score(board, r, c, enemy_color)
-                value += blocking_score * 0.8
-        return value
-
-    def _calculate_flexibility_value(self, positions, board):
-        """计算灵活性价值"""
-        available_positions = sum(1 for r, c in positions
-                                  if 0 <= r < 10 and 0 <= c < 10 and board[r][c] == '0')
-        return available_positions * 10
-
 
 # ================================================================================================
-# 搜索引擎
+# 高效A*搜索引擎
 # ================================================================================================
 
 class SearchEngine:
-    """搜索算法引擎"""
+    """高效A*搜索算法引擎"""
 
-    def __init__(self, position_evaluator, time_manager, config):
+    def __init__(self, position_evaluator, time_manager, config, cache_manager):
         self.position_evaluator = position_evaluator
         self.time_manager = time_manager
         self.config = config
+        self.cache_manager = cache_manager
         self.counter = itertools.count()
 
     def a_star_search(self, initial_state, candidate_moves, game_rule, agent_id):
-        """A*搜索算法"""
+        """高效A*搜索算法"""
+        if not candidate_moves:
+            return None
+
         pending = []
         seen_states = set()
         best_sequence = []
         top_reward = float('-inf')
 
-        # 自适应参数
-        remaining_time = self.time_manager.get_remaining_for_phase('heuristic_search')
-        if remaining_time > 0.4:
-            max_candidates, max_expansions, depth_limit = 6, 40, 3
-        elif remaining_time > 0.2:
-            max_candidates, max_expansions, depth_limit = 4, 20, 2
+        # 动态参数调整
+        remaining_time = self.time_manager.get_remaining_for_phase('astar_search')
+        if remaining_time > 0.3:
+            max_candidates, max_expansions, depth_limit = 4, 15, 2
+        elif remaining_time > 0.15:
+            max_candidates, max_expansions, depth_limit = 3, 8, 1
         else:
-            max_candidates, max_expansions, depth_limit = 3, 10, 1
+            max_candidates, max_expansions, depth_limit = 2, 5, 1
 
-        # 预排序候选动作
+        # 快速预排序候选动作
         candidate_moves = self._smart_sort_candidates(initial_state, candidate_moves, agent_id)
 
+        # 初始化搜索
         for move in candidate_moves[:max_candidates]:
             g = 1
-            h = self._heuristic(initial_state, move, agent_id)
+            h = self._fast_heuristic(initial_state, move, agent_id)
             f = g + h
             heapq.heappush(pending, (f, next(self.counter), g, h,
                                      self._fast_simulate(initial_state, move, game_rule, agent_id), [move]))
 
         expansions_count = 0
         while (pending and expansions_count < max_expansions and
-               self.time_manager.should_continue_phase('heuristic_search')):
+               self.time_manager.should_continue_phase('astar_search')):
 
             f, _, g, h, current_state, move_history = heapq.heappop(pending)
 
             if g > depth_limit:
                 continue
 
-            state_sig = self._create_state_signature(current_state, move_history[-1])
+            # 简化的状态去重
+            state_sig = id(current_state)
             if state_sig in seen_states:
                 continue
             seen_states.add(state_sig)
 
             expansions_count += 1
 
-            reward = self._evaluate_state(current_state, move_history[-1], agent_id)
+            # 快速状态评估
+            reward = self._fast_evaluate_state(current_state, move_history[-1], agent_id)
             if reward > top_reward:
                 top_reward = reward
                 best_sequence = move_history
 
+            # 扩展搜索
             if (g < depth_limit and
-                    self.time_manager.get_remaining_for_phase('heuristic_search') > 0.05):
+                    self.time_manager.get_remaining_for_phase('astar_search') > 0.05):
 
-                next_steps = game_rule.getLegalActions(current_state, agent_id)
-                next_steps = self._smart_sort_candidates(current_state, next_steps, agent_id)
+                try:
+                    next_steps = game_rule.getLegalActions(current_state, agent_id)
+                    if next_steps:
+                        next_steps = self._smart_sort_candidates(current_state, next_steps, agent_id)
 
-                for next_move in next_steps[:2]:
-                    next_g = g + 1
-                    next_h = self._heuristic(current_state, next_move, agent_id)
-                    heapq.heappush(pending, (
-                        next_g + next_h, next(self.counter),
-                        next_g, next_h,
-                        self._fast_simulate(current_state, next_move, game_rule, agent_id),
-                        move_history + [next_move]
-                    ))
+                        for next_move in next_steps[:2]:  # 限制分支因子
+                            next_g = g + 1
+                            next_h = self._fast_heuristic(current_state, next_move, agent_id)
+                            heapq.heappush(pending, (
+                                next_g + next_h, next(self.counter),
+                                next_g, next_h,
+                                self._fast_simulate(current_state, next_move, game_rule, agent_id),
+                                move_history + [next_move]
+                            ))
+                except:
+                    continue
 
         return best_sequence[0] if best_sequence else None
 
     def _smart_sort_candidates(self, state, candidates, agent_id):
-        """智能排序候选动作"""
+        """智能排序候选动作 - 优化版"""
+        if len(candidates) <= 3:
+            return candidates
 
         def move_priority(action):
             if not action.get('coords'):
                 return 0
             r, c = action['coords']
 
-            score = self.position_evaluator.position_values.get((r, c), 0)
+            # 快速评分
+            score = self.config.position_values.get((r, c), 0)
 
-            # 快速威胁评估
+            # 快速威胁检查
             agent = state.agents[agent_id]
             my_color = agent.colour
-            temp_board = [row[:] for row in state.board.chips]
+            board = state.board.chips
+
+            # 简化的威胁评估
+            temp_board = [row[:] for row in board]
             temp_board[r][c] = my_color
 
-            for dx, dy in self.position_evaluator.board_analyzer.direction_vectors:
+            for dx, dy in [(0, 1), (1, 0)]:  # 只检查水平和垂直
                 count, _ = self.position_evaluator.board_analyzer.analyze_chain_pattern(
                     temp_board, r, c, dx, dy, my_color)
-
                 if count >= 5:
                     score += 10000
                     break
@@ -663,130 +635,71 @@ class SearchEngine:
                     score += 3000
                 elif count >= 3:
                     score += 800
-                elif count >= 2:
-                    score += 200
 
             return score
 
         return sorted(candidates, key=move_priority, reverse=True)
 
-    def _heuristic(self, state, action, agent_id):
-        """启发式评估函数"""
+    def _fast_heuristic(self, state, action, agent_id):
+        """快速启发式评估函数"""
         if action.get('type') != 'place' or not action.get('coords'):
             return 1000
 
         r, c = action['coords']
-        board = [row[:] for row in state.board.chips]
-        me = state.agents[agent_id]
-        color = me.colour
-        enemy = 'r' if color == 'b' else 'b'
-
-        board[r][c] = color
-        score = 0
-
-        # 基础评估
-        score += self.position_evaluator.position_values.get((r, c), 0)
-        score += self.position_evaluator.chain_score(board, r, c, color)
-        score += self.position_evaluator.block_enemy_score(board, r, c, enemy)
-        score += self.position_evaluator.hotb_score(board, color)
-
-        return max(1, 1000 - score)
-
-    def _fast_simulate(self, state, action, game_rule, agent_id):
-        """快速状态模拟"""
-        new_state = self._custom_copy(state)
-        agent = new_state.agents[agent_id]
-
-        if action['type'] == 'place' and 'coords' in action:
-            r, c = action['coords']
-            new_state.board.chips[r][c] = agent.colour
-
-        return new_state
-
-    def _custom_copy(self, state):
-        """自定义状态拷贝"""
-        from copy import deepcopy
-        return deepcopy(state)
-
-    def _create_state_signature(self, state, last_move):
-        """创建状态签名"""
-        try:
-            board = state.board.chips
-            board_str = ''.join(''.join(row) for row in board)
-            board_hash = hash(board_str)
-
-            move_info = None
-            if last_move and 'coords' in last_move:
-                move_info = last_move['coords']
-
-            return (board_hash, move_info)
-        except:
-            return (hash(str(state)), str(last_move))
-
-    def _evaluate_state(self, state, action, agent_id):
-        """评估状态"""
+        board = state.board.chips
         agent = state.agents[agent_id]
-        board = [row[:] for row in state.board.chips]
-
-        if action and action.get('coords'):
-            r, c = action['coords']
-            board[r][c] = agent.colour
-
         my_color = agent.colour
         enemy_color = 'r' if my_color == 'b' else 'b'
 
-        score = 0
-        score += self._score_all_chains(board, my_color) * 2.5
-        score -= self._score_all_chains(board, enemy_color) * 2.0
-        score += self.position_evaluator.hotb_score(board, my_color)
+        # 使用缓存
+        board_hash = self.cache_manager._get_board_hash(board)
+        cached_result = self.cache_manager.get_eval_cache(board_hash, (r, c))
+        if cached_result is not None:
+            return cached_result
 
-        return score
+        # 快速评分
+        score = self.position_evaluator.fast_comprehensive_score(board, r, c, my_color, enemy_color)
+        result = max(1, 1000 - score // 10)
 
-    def _score_all_chains(self, board, color):
-        """评估所有连子"""
-        total_score = 0
-        processed = set()
+        # 缓存结果
+        self.cache_manager.set_eval_cache(board_hash, (r, c), result)
+        return result
 
-        for r in range(10):
-            for c in range(10):
-                if (r, c) in processed or board[r][c] != color:
-                    continue
+    def _fast_simulate(self, state, action, game_rule, agent_id):
+        """快速状态模拟"""
+        try:
+            from copy import deepcopy
+            new_state = deepcopy(state)
+            agent = new_state.agents[agent_id]
 
-                max_chain_score = 0
-                for dx, dy in self.position_evaluator.board_analyzer.direction_vectors:
-                    count, openings = self.position_evaluator.board_analyzer.analyze_chain_pattern(
-                        board, r, c, dx, dy, color)
-                    corner_support = self.position_evaluator.board_analyzer.check_corner_support(
-                        board, r, c, dx, dy, color)
+            if action['type'] == 'place' and 'coords' in action:
+                r, c = action['coords']
+                new_state.board.chips[r][c] = agent.colour
 
-                    chain_score = self._convert_chain_to_score(count, openings, corner_support)
-                    max_chain_score = max(max_chain_score, chain_score)
+            return new_state
+        except:
+            return state
 
-                total_score += max_chain_score
-                processed.add((r, c))
-
-        return total_score
-
-    def _convert_chain_to_score(self, count, openings, corner_support):
-        """连子转换为分数"""
-        if count >= 5:
-            return 10000
-        elif count == 4:
-            return 2000 if (openings > 0 or corner_support) else 400
-        elif count == 3:
-            return 300 if (openings > 0 or corner_support) else 60
-        elif count == 2:
-            return 40 if openings > 0 else 10
-        else:
+    def _fast_evaluate_state(self, state, action, agent_id):
+        """快速状态评估"""
+        if not action or not action.get('coords'):
             return 0
+
+        r, c = action['coords']
+        agent = state.agents[agent_id]
+        board = state.board.chips
+        my_color = agent.colour
+        enemy_color = 'r' if my_color == 'b' else 'b'
+
+        return self.position_evaluator.fast_comprehensive_score(board, r, c, my_color, enemy_color)
 
 
 # ================================================================================================
-# MCTS相关类
+# 高效MCTS实现
 # ================================================================================================
 
 class MCTSNode:
-    """MCTS节点"""
+    """轻量级MCTS节点"""
 
     def __init__(self, state, action=None, parent=None):
         self.state = state
@@ -830,25 +743,21 @@ class MCTSNode:
         return self.untried_actions is not None and len(self.untried_actions) == 0
 
     def is_terminal(self):
-        """检查是否为终端节点"""
+        """快速终端检查"""
         try:
-            if not hasattr(self, 'state') or not self.state:
-                return True
-
-            # 简化的终端检查
             board = self.state.board.chips
+            # 简化的获胜检查
             for r in range(10):
                 for c in range(10):
                     if board[r][c] in ['r', 'b']:
-                        # 简单检查是否有5连
                         color = board[r][c]
-                        for dx, dy in [(0, 1), (1, 0), (1, 1), (1, -1)]:
+                        # 只检查水平和垂直方向
+                        for dx, dy in [(0, 1), (1, 0)]:
                             count = 1
                             for direction in [1, -1]:
                                 for i in range(1, 5):
                                     x, y = r + dx * direction * i, c + dy * direction * i
-                                    if (0 <= x < 10 and 0 <= y < 10 and
-                                            board[x][y] == color):
+                                    if (0 <= x < 10 and 0 <= y < 10 and board[x][y] == color):
                                         count += 1
                                     else:
                                         break
@@ -859,8 +768,143 @@ class MCTSNode:
             return True
 
 
+class MCTSEngine:
+    """高效MCTS引擎"""
+
+    def __init__(self, position_evaluator, time_manager, config):
+        self.position_evaluator = position_evaluator
+        self.time_manager = time_manager
+        self.config = config
+
+    def mcts_refinement(self, initial_state, candidate_actions, game_rule, agent_id):
+        """MCTS改进A*结果"""
+        if not candidate_actions or not self.time_manager.should_continue_phase('mcts_refinement'):
+            return candidate_actions[0] if candidate_actions else None
+
+        # 限制MCTS的候选动作数量
+        top_candidates = candidate_actions[:min(len(candidate_actions), 3)]
+
+        # 为每个候选动作创建MCTS根节点
+        action_scores = {}
+        remaining_time = self.time_manager.get_remaining_for_phase('mcts_refinement')
+        iterations_per_action = max(10, int(remaining_time * 50))  # 动态调整迭代次数
+
+        for action in top_candidates:
+            if not self.time_manager.should_continue_phase('mcts_refinement'):
+                break
+
+            # 模拟执行动作
+            simulated_state = self._fast_simulate(initial_state, action, game_rule, agent_id)
+            if not simulated_state:
+                continue
+
+            root = MCTSNode(simulated_state, action)
+            root.player_id = agent_id
+
+            # 获取合法动作
+            try:
+                legal_actions = game_rule.getLegalActions(simulated_state, agent_id)
+                root.untried_actions = legal_actions[:10] if legal_actions else []  # 限制动作数量
+            except:
+                root.untried_actions = []
+
+            # 执行MCTS迭代
+            for _ in range(iterations_per_action):
+                if not self.time_manager.should_continue_phase('mcts_refinement'):
+                    break
+                self._mcts_iteration(root, game_rule)
+
+            # 计算最终分数
+            if root.visits > 0:
+                action_scores[action] = root.wins / root.visits
+            else:
+                action_scores[action] = 0
+
+        if action_scores:
+            return max(action_scores.items(), key=lambda x: x[1])[0]
+
+        return candidate_actions[0]
+
+    def _mcts_iteration(self, root, game_rule):
+        """单次MCTS迭代 - 优化版"""
+        # 1. 选择
+        node = self._mcts_select(root)
+
+        # 2. 扩展
+        if not node.is_terminal() and node.untried_actions:
+            action = random.choice(node.untried_actions)
+            node.untried_actions.remove(action)
+            new_state = self._fast_simulate(node.state, action, game_rule, node.player_id)
+            if new_state:
+                node = node.add_child(action, new_state)
+                # 设置新节点的合法动作
+                try:
+                    other_player = 1 - node.parent.player_id if node.parent.player_id in [0, 1] else (
+                        1 if node.parent.player_id == 0 else 0)
+                    legal_actions = game_rule.getLegalActions(new_state, other_player)
+                    node.untried_actions = legal_actions[:5] if legal_actions else []  # 限制数量
+                except:
+                    node.untried_actions = []
+
+        # 3. 模拟 - 简化版
+        result = self._fast_simulate_playout(node)
+
+        # 4. 回传
+        self._mcts_backpropagate(node, result)
+
+    def _mcts_select(self, root):
+        """MCTS选择阶段"""
+        node = root
+        depth = 0
+        while node.children and node.is_fully_expanded() and depth < 3:  # 限制选择深度
+            node = node.select_child()
+            depth += 1
+        return node
+
+    def _fast_simulate_playout(self, node):
+        """快速模拟游戏结束"""
+        # 简化的评估 - 直接使用启发式评估
+        try:
+            if not node.action or not node.action.get('coords'):
+                return 0.5
+
+            r, c = node.action['coords']
+            board = node.state.board.chips
+            agent = node.state.agents[node.player_id]
+            my_color = agent.colour
+            enemy_color = 'r' if my_color == 'b' else 'b'
+
+            score = self.position_evaluator.fast_comprehensive_score(board, r, c, my_color, enemy_color)
+            # 归一化到[0,1]
+            normalized_score = min(1.0, max(0.0, (score + 1000) / 3000.0))
+            return normalized_score
+        except:
+            return 0.5
+
+    def _mcts_backpropagate(self, node, result):
+        """MCTS回传阶段"""
+        while node is not None:
+            node.update(result)
+            node = node.parent
+
+    def _fast_simulate(self, state, action, game_rule, agent_id):
+        """快速状态模拟"""
+        try:
+            from copy import deepcopy
+            new_state = deepcopy(state)
+            agent = new_state.agents[agent_id]
+
+            if action['type'] == 'place' and 'coords' in action:
+                r, c = action['coords']
+                new_state.board.chips[r][c] = agent.colour
+
+            return new_state
+        except:
+            return None
+
+
 # ================================================================================================
-# 主代理类
+# 主代理类 - A*+MCTS双算法优化版
 # ================================================================================================
 
 class myAgent(Agent):
@@ -869,15 +913,20 @@ class myAgent(Agent):
         self.id = _id
         self.rule = GameRule(2)
 
-        # 初始化配置和组件
+        # 快速初始化配置和组件
         self.config = GameConfig()
         self.cache_manager = CacheManager()
         self.board_analyzer = BoardAnalyzer(self.config)
-        self.board_analyzer.agent_id = _id  # 设置agent_id
+        self.board_analyzer.agent_id = _id
         self.threat_analyzer = ThreatAnalyzer(self.board_analyzer, self.config)
         self.position_evaluator = PositionEvaluator(self.board_analyzer, self.threat_analyzer, self.config)
         self.card_selector = CardSelector(self.board_analyzer, self.threat_analyzer, self.position_evaluator,
                                           self.config)
+
+        # 创建搜索引擎
+        self.time_manager = TimeManager()
+        self.search_engine = SearchEngine(self.position_evaluator, self.time_manager, self.config, self.cache_manager)
+        self.mcts_engine = MCTSEngine(self.position_evaluator, self.time_manager, self.config)
 
         # 时间管理和计数器
         self.counter = itertools.count()
@@ -914,28 +963,43 @@ class myAgent(Agent):
             (2, 2), (2, 7), (7, 2), (7, 7)  # 次级战略位置
         ]
 
+        # 预计算常用评估
+        self._precompute_common_evaluations()
+
         self.startup_time_used = True
 
-    # ===========================================================================================
-    # 主要接口方法
-    # ===========================================================================================
+    def _precompute_common_evaluations(self):
+        """预计算常用评估数据"""
+        # 预计算开局阶段的位置评估
+        self.opening_position_scores = {}
+        for r in range(10):
+            for c in range(10):
+                # 预计算开局位置的基础评分
+                score = self.config.position_values.get((r, c), 0)
+                if (r, c) in HOTB_COORDS:
+                    score += 50  # 开局HOTB额外奖励
+                self.opening_position_scores[(r, c)] = score
 
     def SelectAction(self, actions, game_state):
-        """主要决策接口"""
+        """主要决策接口 - A*+MCTS双算法版"""
         self.turn_count += 1
 
         # 时间管理初始化
         if not self.startup_time_used:
             startup_elapsed = time.time() - self.startup_start_time
             remaining_startup = self.startup_time_limit - startup_elapsed
-            time_limit = min(remaining_startup - 0.1, 0.98) if remaining_startup > 0.2 else 0.98
+            time_limit = min(remaining_startup - 0.1, 0.95) if remaining_startup > 0.2 else 0.95
             if remaining_startup <= 0.2:
                 self.startup_time_used = True
         else:
-            time_limit = 0.98
+            time_limit = 0.95
 
         self.time_manager = TimeManager(time_limit)
         self.time_manager.start_turn()
+
+        # 评估局面复杂度并调整时间分配
+        complexity = self._assess_game_complexity(game_state, actions)
+        self.time_manager.adjust_phase_limits(complexity)
 
         if time_limit < 0.05:
             return self.emergency_quick_decision(actions, game_state)
@@ -945,9 +1009,94 @@ class myAgent(Agent):
         if action_type == 'card_selection':
             return self.card_selector.select_optimal_card(actions, game_state)
         elif action_type == 'place':
-            return self.place_strategy(actions, game_state)
+            return self.dual_algorithm_strategy(actions, game_state)
         else:
-            return self.place_strategy(actions, game_state)
+            return self.dual_algorithm_strategy(actions, game_state)
+
+    def _assess_game_complexity(self, game_state, actions):
+        """评估游戏复杂度"""
+        try:
+            complexity = 0.5  # 基础复杂度
+
+            # 动作数量影响复杂度
+            if len(actions) > 20:
+                complexity += 0.2
+            elif len(actions) < 5:
+                complexity -= 0.2
+
+            # 游戏阶段影响复杂度
+            if self.turn_count <= 10:
+                complexity -= 0.1  # 开局相对简单
+            elif self.turn_count > 30:
+                complexity += 0.2  # 残局更复杂
+
+            # 棋盘密度影响复杂度
+            if hasattr(game_state, 'board'):
+                board = game_state.board.chips
+                piece_count = sum(1 for row in board for cell in row if cell != '0')
+                if piece_count > 40:
+                    complexity += 0.1
+
+            return max(0.1, min(1.0, complexity))
+        except:
+            return 0.5
+
+    def dual_algorithm_strategy(self, actions, game_state):
+        """A*+MCTS双算法策略"""
+        # 第一阶段：快速决策保底
+        quick_decision = self.get_quick_decision(actions, game_state)
+
+        if not self.time_manager.should_continue_phase('astar_search'):
+            return quick_decision
+
+        # 第二阶段：A*搜索获得候选方案
+        try:
+            astar_result = self.search_engine.a_star_search(game_state, actions, self.rule, self.id)
+            if not astar_result:
+                astar_result = quick_decision
+        except Exception:
+            astar_result = quick_decision
+
+        # 第三阶段：MCTS优化A*结果
+        if self.time_manager.should_continue_phase('mcts_refinement'):
+            try:
+                # 将A*结果和快速决策结果组合作为MCTS的候选
+                candidates = [astar_result]
+                if astar_result != quick_decision:
+                    candidates.append(quick_decision)
+
+                # 添加其他高分候选
+                if len(actions) > 2:
+                    additional_candidates = self._get_additional_candidates(actions, game_state, 2)
+                    candidates.extend(additional_candidates)
+
+                mcts_result = self.mcts_engine.mcts_refinement(game_state, candidates, self.rule, self.id)
+                return mcts_result if mcts_result else astar_result
+            except Exception:
+                return astar_result
+
+        return astar_result
+
+    def _get_additional_candidates(self, actions, game_state, count):
+        """获取额外的高分候选动作"""
+        try:
+            agent = game_state.agents[self.id]
+            board = game_state.board.chips
+            my_color = agent.colour
+            enemy_color = 'r' if my_color == 'b' else 'b'
+
+            scored_actions = []
+            for action in actions:
+                if not action.get('coords'):
+                    continue
+                r, c = action['coords']
+                score = self.position_evaluator.fast_comprehensive_score(board, r, c, my_color, enemy_color)
+                scored_actions.append((score, action))
+
+            scored_actions.sort(key=lambda x: x[0], reverse=True)
+            return [action for _, action in scored_actions[:count]]
+        except:
+            return actions[:count]
 
     def identify_action_type(self, actions, game_state):
         """判断动作类型：选牌或放牌"""
@@ -977,24 +1126,8 @@ class myAgent(Agent):
 
         return 'place'
 
-    def place_strategy(self, actions, game_state):
-        """放牌策略"""
-        # 快速决策作为保底
-        quick_decision = self.get_quick_decision(actions, game_state)
-
-        if not self.time_manager.should_continue_phase('heuristic_search'):
-            return quick_decision
-
-        # 尝试更好的决策
-        try:
-            search_engine = SearchEngine(self.position_evaluator, self.time_manager, self.config)
-            better_decision = search_engine.a_star_search(game_state, actions, self.rule, self.id)
-            return better_decision if better_decision else quick_decision
-        except Exception:
-            return quick_decision
-
     def get_quick_decision(self, actions, game_state):
-        """快速决策方法"""
+        """快速决策方法 - 优化版"""
         if not actions:
             return None
 
@@ -1008,7 +1141,7 @@ class myAgent(Agent):
         my_color = agent.colour
         enemy_color = 'r' if my_color == 'b' else 'b'
 
-        # 开局检查
+        # 开局检查 - 使用预计算数据
         if self.turn_count <= 6:
             for action in actions[:min(len(actions), 5)]:
                 if not action.get('coords'):
@@ -1017,58 +1150,18 @@ class myAgent(Agent):
                 if (r, c) in self.opening_priority_positions:
                     return action
 
-        for action in actions[:min(len(actions), 6)]:
+        # 快速评估候选动作
+        for action in actions[:min(len(actions), 8)]:  # 增加候选数量
             if not action.get('coords'):
                 continue
 
             r, c = action['coords']
-            score = 0
 
-            # 快速评估
-            if (r, c) in HOTB_COORDS:
-                score += 150
-            elif 3 <= r <= 6 and 3 <= c <= 6:
-                score += 80
-
-            # 快速连子检查
-            temp_board = [row[:] for row in board]
-            temp_board[r][c] = my_color
-
-            for dx, dy in [(0, 1), (1, 0), (1, 1), (1, -1)]:
-                count = 1
-                for direction in [1, -1]:
-                    for i in range(1, 5):
-                        x, y = r + dx * direction * i, c + dy * direction * i
-                        if (0 <= x < 10 and 0 <= y < 10 and
-                                (temp_board[x][y] == my_color or self.board_analyzer.is_corner_position(x, y))):
-                            count += 1
-                        else:
-                            break
-
-                if count >= 5:
-                    return action
-                elif count >= 4:
-                    score += 2000
-                elif count >= 3:
-                    score += 500
-
-            # 快速阻断检查
-            for dx, dy in [(0, 1), (1, 0), (1, 1), (1, -1)]:
-                enemy_temp = [row[:] for row in board]
-                enemy_temp[r][c] = enemy_color
-
-                enemy_count = 1
-                for direction in [1, -1]:
-                    for i in range(1, 5):
-                        x, y = r + dx * direction * i, c + dy * direction * i
-                        if (0 <= x < 10 and 0 <= y < 10 and
-                                (enemy_temp[x][y] == enemy_color or self.board_analyzer.is_corner_position(x, y))):
-                            enemy_count += 1
-                        else:
-                            break
-
-                if enemy_count >= 4:
-                    score += 1500
+            # 使用预计算的快速评分
+            if self.turn_count <= 10 and (r, c) in self.opening_position_scores:
+                score = self.opening_position_scores[(r, c)]
+            else:
+                score = self.position_evaluator.fast_comprehensive_score(board, r, c, my_color, enemy_color) // 10
 
             if score > best_score:
                 best_score = score
@@ -1077,50 +1170,22 @@ class myAgent(Agent):
         return best_action
 
     def emergency_quick_decision(self, actions, game_state):
-        """紧急快速决策"""
+        """紧急快速决策 - 进一步优化"""
         if not actions:
             return None
 
-        agent, board, is_valid = self.safe_get_game_state_info(game_state)
-        if not is_valid:
-            return actions[0]
-
-        my_color = agent.colour
-        best_action = actions[0]
-        best_score = float('-inf')
-
+        # 优先选择HOTB位置
         for action in actions[:min(len(actions), 3)]:
-            if not action.get('coords'):
-                continue
+            if action.get('coords') and action['coords'] in HOTB_COORDS:
+                return action
 
-            r, c = action['coords']
-            score = 0
-
-            # HOTB最高优先级
-            if (r, c) in HOTB_COORDS:
-                score += 300
-
-            # 检查直接获胜
-            temp_board = [row[:] for row in board]
-            temp_board[r][c] = my_color
-            for dx, dy in [(0, 1), (1, 0), (1, 1), (1, -1)]:
-                count = 1
-                for direction in [1, -1]:
-                    for i in range(1, 4):
-                        x, y = r + dx * direction * i, c + dy * direction * i
-                        if (0 <= x < 10 and 0 <= y < 10 and
-                                (temp_board[x][y] == my_color or self.board_analyzer.is_corner_position(x, y))):
-                            count += 1
-                        else:
-                            break
-                if count >= 5:
+        # 使用预计算的开局位置
+        if hasattr(self, 'opening_priority_positions'):
+            for action in actions[:min(len(actions), 5)]:
+                if action.get('coords') and action['coords'] in self.opening_priority_positions:
                     return action
 
-            if score > best_score:
-                best_score = score
-                best_action = action
-
-        return best_action
+        return actions[0]
 
     def safe_get_game_state_info(self, game_state):
         """安全获取游戏状态信息"""
@@ -1133,7 +1198,7 @@ class myAgent(Agent):
 
 
 # ================================================================================================
-# 辅助类和函数（保持兼容性）
+# 保持兼容性的辅助类
 # ================================================================================================
 
 class WeightLearningSystem:
@@ -1169,6 +1234,7 @@ class OpponentModel:
 
 class OpeningBook:
     """开局库（保持接口兼容）"""
+
     def __init__(self):
         self.HOTB_CARDS = ['5h', '4h', '2h', '3h']
         self.HOTB_POSITIONS = [(4, 4), (4, 5), (5, 4), (5, 5)]
