@@ -5,7 +5,7 @@ import time
 import copy
 import math
 import itertools
-from collections import defaultdict
+from collections import defaultdict, deque
 
 # ===========================
 # 1. 常量定义区
@@ -42,6 +42,41 @@ class GamePhase:
     ENDGAME = "endgame"  # 终局（超过35个棋子）
 
 
+# ===========================
+# 3. 新增：LRU缓存实现
+# ===========================
+class LRUCache:
+    """简单的LRU缓存实现，用于限制缓存大小"""
+
+    def __init__(self, capacity=10000):
+        self.capacity = capacity
+        self.cache = {}
+        self.order = deque()
+
+    def get(self, key):
+        if key in self.cache:
+            self.order.remove(key)
+            self.order.append(key)
+            return self.cache[key]
+        return None
+
+    def put(self, key, value):
+        if key in self.cache:
+            self.order.remove(key)
+        elif len(self.cache) >= self.capacity:
+            # 移除最久未使用的项
+            oldest = self.order.popleft()
+            del self.cache[oldest]
+
+        self.cache[key] = value
+        self.order.append(key)
+
+    def clear(self):
+        """清空缓存"""
+        self.cache.clear()
+        self.order.clear()
+
+
 class BoardState:
     """轻量级棋盘状态，用于快速复制"""
 
@@ -63,8 +98,8 @@ class BoardState:
 class CardEvaluator:
     def __init__(self, agent):
         self.agent = agent
-        self._card_cache = {}  # 卡牌评估缓存
-        self._hand_diversity_cache = {}  # 手牌多样性缓存
+        self._card_cache = LRUCache(capacity=5000)  # 使用LRU缓存
+        self._hand_diversity_cache = {}
 
     def _evaluate_card(self, card, state, consider_opponent=True):
         """评估卡牌在当前状态下的价值（增强版）"""
@@ -73,8 +108,9 @@ class CardEvaluator:
             tuple(tuple(row) for row in state.board.chips))
         cache_key = (str(card), board_hash, consider_opponent)
 
-        if cache_key in self._card_cache:
-            return self._card_cache[cache_key]
+        cached_result = self._card_cache.get(cache_key)
+        if cached_result is not None:
+            return cached_result
 
         board = state.board.chips
 
@@ -97,7 +133,7 @@ class CardEvaluator:
         else:
             result = 0
 
-        self._card_cache[cache_key] = result
+        self._card_cache.put(cache_key, result)
         return result
 
     def _evaluate_card_for_opponent(self, card, state):
@@ -139,6 +175,8 @@ class CardEvaluator:
         valid_positions = 0
 
         for pos in positions:
+            if isinstance(pos, list):  # BUG修复：处理嵌套列表
+                pos = tuple(pos)
             r, c = pos
             # 检查位置是否可用
             if not self._is_position_available(board, r, c):
@@ -215,12 +253,15 @@ class CardEvaluator:
         """检查位置是否可用"""
         if not (0 <= r < 10 and 0 <= c < 10):
             return False
+        # BUG修复：角落是free space，不算空位
+        if (r, c) in CORNERS:
+            return False
         return board[r][c] == 0 or board[r][c] == '0'  # 空位
 
 
 class ActionEvaluator:
-    _evaluation_cache = {}  # 静态缓存
-    _threat_cache = {}  # 威胁检测缓存
+    _evaluation_cache = LRUCache(capacity=10000)  # 使用LRU缓存
+    _threat_cache = LRUCache(capacity=5000)
 
     @staticmethod
     def evaluate_action_quality(state, action):
@@ -236,8 +277,9 @@ class ActionEvaluator:
         board_hash = hash(tuple(tuple(row) for row in state.board.chips))
         cache_key = (board_hash, r, c)
 
-        if cache_key in ActionEvaluator._evaluation_cache:
-            return ActionEvaluator._evaluation_cache[cache_key]
+        cached_result = ActionEvaluator._evaluation_cache.get(cache_key)
+        if cached_result is not None:
+            return cached_result
 
         board = state.board.chips
 
@@ -263,27 +305,27 @@ class ActionEvaluator:
             count = ActionEvaluator._count_consecutive_fast(board, r, c, dx, dy, color)
             # 根据连续长度评分
             if count >= 5:
-                score += 200  # 形成序列
+                score += 2000  # 形成序列 - 大幅提高分数
             elif count == 4:
-                score += 100
+                score += 500  # 接近获胜
             elif count == 3:
-                score += 30
+                score += 100
             elif count == 2:
-                score += 10
+                score += 20
 
         # 增强防守评分
         critical_block = False
         for dx, dy in DIRECTIONS:
             enemy_chain = ActionEvaluator._count_enemy_threat_fast(board, r, c, dx, dy, enemy)
             if enemy_chain >= 4:
-                score += 500  # 极高优先级阻断
+                score += 1000  # 极高优先级阻断
                 critical_block = True
             elif enemy_chain >= 3:
-                score += 150  # 高优先级阻断
+                score += 300  # 高优先级阻断
 
             # 检测双向威胁
             if ActionEvaluator._check_double_threat(board, r, c, dx, dy, enemy):
-                score += 300
+                score += 400
 
         # 特殊情况：如果是关键防守，大幅提升得分
         if critical_block:
@@ -295,7 +337,7 @@ class ActionEvaluator:
 
         # 转换为质量分数（越低越好）
         result = 100 - score
-        ActionEvaluator._evaluation_cache[cache_key] = result
+        ActionEvaluator._evaluation_cache.put(cache_key, result)
         return result
 
     @staticmethod
@@ -308,7 +350,7 @@ class ActionEvaluator:
         for i in range(1, 5):
             x, y = r + i * dx, c + i * dy
             if 0 <= x < 10 and 0 <= y < 10:
-                if board[x][y] == 0:
+                if board[x][y] == 0 or board[x][y] == '0':
                     threats += 1
                     break
                 elif board[x][y] != enemy:
@@ -318,7 +360,7 @@ class ActionEvaluator:
         for i in range(1, 5):
             x, y = r - i * dx, c - i * dy
             if 0 <= x < 10 and 0 <= y < 10:
-                if board[x][y] == 0:
+                if board[x][y] == 0 or board[x][y] == '0':
                     threats += 1
                     break
                 elif board[x][y] != enemy:
@@ -418,21 +460,21 @@ class ActionEvaluator:
         for dx, dy in DIRECTIONS:
             count = ActionEvaluator._count_consecutive_fast(board_copy, r, c, dx, dy, color)
             if count >= 5:
-                score += 200
+                score += 2000
             elif count == 4:
-                score += 100
+                score += 500
             elif count == 3:
-                score += 30
+                score += 100
             elif count == 2:
-                score += 10
+                score += 20
 
         # 防守评分
         for dx, dy in DIRECTIONS:
             enemy_threat = ActionEvaluator._count_enemy_threat_fast(board, r, c, dx, dy, enemy)
             if enemy_threat >= 4:
-                score += 500
+                score += 1000
             elif enemy_threat >= 3:
-                score += 150
+                score += 300
 
         # 中心控制
         hotb_controlled = sum(1 for x, y in HOTB_COORDS if board_copy[x][y] == color)
@@ -452,15 +494,17 @@ class ActionEvaluator:
 
 
 class StateEvaluator:
-    _state_cache = {}  # 状态评估缓存
+    _state_cache = LRUCache(capacity=5000)  # 使用LRU缓存
 
     @staticmethod
     def evaluate(state, last_action=None):
         """评估游戏状态的价值（带缓存）"""
         # 生成缓存键
         board_hash = hash(tuple(tuple(row) for row in state.board.chips))
-        if board_hash in StateEvaluator._state_cache:
-            return StateEvaluator._state_cache[board_hash]
+
+        cached_result = StateEvaluator._state_cache.get(board_hash)
+        if cached_result is not None:
+            return cached_result
 
         board = state.board.chips
 
@@ -504,41 +548,64 @@ class StateEvaluator:
 
         # 归一化到[-1, 1]区间
         result = max(-1, min(1, total_score / 200))
-        StateEvaluator._state_cache[board_hash] = result
+        StateEvaluator._state_cache.put(board_hash, result)
         return result
 
     @staticmethod
     def _calculate_sequence_score_fast(board, color):
         """优化的序列得分计算"""
         sequence_score = 0
+        # 使用集合避免重复计算
+        counted_sequences = set()
+
         for i in range(10):
             for j in range(10):
                 if board[i][j] == color:
                     for dx, dy in DIRECTIONS:
-                        count = ActionEvaluator._count_consecutive_fast(board, i, j, dx, dy, color)
-                        if count >= 5:
-                            sequence_score += 100
-                        elif count == 4:
-                            sequence_score += 20
-                        elif count == 3:
-                            sequence_score += 5
-                        elif count == 2:
-                            sequence_score += 1
+                        # 生成序列的唯一标识
+                        sequence_id = (i, j, dx, dy)
+                        if sequence_id not in counted_sequences:
+                            count = ActionEvaluator._count_consecutive_fast(board, i, j, dx, dy, color)
+                            if count >= 2:  # 只计算有意义的序列
+                                # 将整个序列标记为已计算
+                                for k in range(count):
+                                    counted_sequences.add((i + k * dx, j + k * dy, dx, dy))
+
+                                if count >= 5:
+                                    sequence_score += 100
+                                elif count == 4:
+                                    sequence_score += 20
+                                elif count == 3:
+                                    sequence_score += 5
+                                elif count == 2:
+                                    sequence_score += 1
+
         return sequence_score
 
     @staticmethod
     def _calculate_defense_score_fast(board, opp_color):
         """优化的防御得分计算"""
         defense_score = 0
+        # 使用集合避免重复计算
+        counted_threats = set()
+
         for i in range(10):
             for j in range(10):
                 if board[i][j] == opp_color:
                     for dx, dy in DIRECTIONS:
-                        count = ActionEvaluator._count_consecutive_fast(board, i, j, dx, dy, opp_color)
-                        if count >= 4:
-                            defense_score -= 50
-                        elif count == 3:
-                            defense_score -= 10
+                        threat_id = (i, j, dx, dy)
+                        if threat_id not in counted_threats:
+                            count = ActionEvaluator._count_consecutive_fast(board, i, j, dx, dy, opp_color)
+                            if count >= 3:  # 只关注真正的威胁
+                                # 标记整个威胁序列
+                                for k in range(count):
+                                    counted_threats.add((i + k * dx, j + k * dy, dx, dy))
+
+                                if count >= 4:
+                                    defense_score -= 50
+                                elif count == 3:
+                                    defense_score -= 10
+
         return defense_score
 
     @staticmethod
@@ -637,6 +704,8 @@ class Node:
         self.value = 0.0
         # 动作管理（延迟初始化）
         self.untried_actions = None
+        # 新增：是否为终止节点
+        self.is_terminal = False
 
     def _efficient_copy_state(self, state):
         """高效的状态复制"""
@@ -671,7 +740,7 @@ class Node:
         """使用UCB公式选择最有希望的子节点（优化版）"""
         best_score = float('-inf')
         best_child = None
-        log_visits = math.log(self.visits)
+        log_visits = math.log(self.visits) if self.visits > 0 else 0  # BUG修复：避免log(0)
 
         for child in self.children:
             # UCB计算
@@ -684,7 +753,7 @@ class Node:
                 # 启发式调整（缓存友好）
                 if child.action:
                     heuristic_score = ActionEvaluator.evaluate_action_quality(self.state, child.action)
-                    heuristic_factor = 1.0 / (1.0 + heuristic_score / 100)
+                    heuristic_factor = 1.0 / (1.0 + max(0, heuristic_score) / 100)  # BUG修复：避免负分母
                 else:
                     heuristic_factor = 1.0
 
@@ -720,17 +789,28 @@ class Node:
         self.value += result
 
 
-class AdaptiveTimeManager(TimeManager):
+class AdaptiveTimeManager:
     """自适应时间管理器"""
 
     def __init__(self):
-        super().__init__()
+        self.start_time = 0
+        self.time_budget = MAX_THINK_TIME
         self.move_count = 0
         self.phase = GamePhase.OPENING
 
     def start_timing(self):
-        super().start_timing()
+        self.start_time = time.time()
         self.move_count += 1
+
+    def get_remaining_time(self):
+        elapsed = time.time() - self.start_time
+        return self.time_budget - elapsed
+
+    def is_timeout(self, buffer=0.05):
+        return self.get_remaining_time() < buffer
+
+    def should_use_quick_mode(self):
+        return self.get_remaining_time() < 0.25
 
     def get_time_budget(self, state, importance=0.5):
         """根据游戏阶段和重要性动态分配时间"""
@@ -762,7 +842,7 @@ class AdaptiveTimeManager(TimeManager):
         # 检查是否有4连的情况
         for i in range(10):
             for j in range(10):
-                if board[i][j] not in [0, '0']:
+                if board[i][j] not in [0, '0'] and board[i][j] not in CORNERS:
                     color = board[i][j]
                     for dx, dy in DIRECTIONS:
                         if ActionEvaluator._count_consecutive_fast(board, i, j, dx, dy, color) >= 4:
@@ -798,6 +878,12 @@ class myAgent(Agent):
         self._initialize_opening_book()
         self.move_history = []
 
+        # 新增：性能统计
+        self.performance_stats = {
+            'mcts_iterations': [],
+            'decision_times': []
+        }
+
     def _initialize_opening_book(self):
         """初始化开局库"""
         self.opening_book = {
@@ -826,11 +912,13 @@ class myAgent(Agent):
         """增强的卡牌选择逻辑"""
         trade_actions = [a for a in actions if a.get('type') == 'trade']
 
-        if not hasattr(game_state, 'display_cards'):
-            return random.choice(trade_actions)
+        if not hasattr(game_state, 'display_cards') or not game_state.display_cards:
+            return random.choice(trade_actions) if trade_actions else None
 
         # 获取当前手牌
-        current_hand = game_state.agents[self.id].hand if hasattr(game_state.agents[self.id], 'hand') else []
+        current_hand = []
+        if hasattr(game_state.agents[self.id], 'hand'):
+            current_hand = game_state.agents[self.id].hand
 
         # 评估所有展示牌
         best_card = None
@@ -862,7 +950,7 @@ class myAgent(Agent):
             if action.get('draft_card') == best_card:
                 return action
 
-        return random.choice(trade_actions)
+        return random.choice(trade_actions) if trade_actions else None
 
     def _calculate_diversity_bonus(self, card, hand):
         """计算选择该卡牌对手牌多样性的贡献"""
@@ -885,6 +973,10 @@ class myAgent(Agent):
         self.time_manager.start_timing()
         self._initialize_colors(game_state)
 
+        # BUG修复：检查actions是否为空
+        if not actions:
+            return None
+
         if self._is_card_selection(actions):
             return self._select_strategic_card(actions, game_state)
 
@@ -901,7 +993,9 @@ class myAgent(Agent):
         # 开局库查询
         move_num = len(self.move_history)
         if move_num < 2 and self._check_opening_book(actions, game_state, move_num):
-            return self._get_opening_move(actions, game_state, move_num)
+            opening_move = self._get_opening_move(actions, game_state, move_num)
+            if opening_move:
+                return opening_move
 
         # 启发式筛选候选动作
         candidates = self._heuristic_filter(actions, game_state)
@@ -910,14 +1004,23 @@ class myAgent(Agent):
         importance = self._evaluate_move_importance(game_state, candidates)
         time_budget = self.time_manager.get_time_budget(game_state, importance)
 
-        # 时间检查
-        if self.time_manager.get_remaining_time() < time_budget:
+        # 紧急模式：时间不足时的激进剪枝
+        if self.time_manager.get_remaining_time() < 0.1:
+            # 只考虑前5个最佳动作
+            candidates = candidates[:5]
+            self.simulation_depth = 2
+        elif self.time_manager.get_remaining_time() < time_budget:
             return candidates[0] if candidates else random.choice(actions)
 
         # MCTS深度搜索
         try:
-            return self._mcts_search(candidates, game_state)
-        except:
+            result = self._mcts_search(candidates, game_state)
+            # 记录性能统计
+            self.performance_stats['decision_times'].append(time.time() - self.time_manager.start_time)
+            return result
+        except Exception as e:
+            # BUG修复：异常处理
+            print(f"MCTS搜索异常: {e}")
             return candidates[0] if candidates else random.choice(actions)
 
     def _check_opening_book(self, actions, game_state, move_num):
@@ -930,7 +1033,7 @@ class myAgent(Agent):
             recommendations = self.opening_book[0]
         else:
             last_opp_move = self._get_last_opponent_move(game_state)
-            if last_opp_move in self.opening_book[1]:
+            if last_opp_move and last_opp_move in self.opening_book[1]:
                 recommendations = self.opening_book[1][last_opp_move]
             else:
                 return False
@@ -948,6 +1051,8 @@ class myAgent(Agent):
             recommendations = self.opening_book[0]
         else:
             last_opp_move = self._get_last_opponent_move(game_state)
+            if not last_opp_move:
+                return None
             recommendations = self.opening_book[1].get(last_opp_move, [])
 
         for r, c in recommendations:
@@ -976,19 +1081,27 @@ class myAgent(Agent):
         best_score = ActionEvaluator.evaluate_action_quality(game_state, candidates[0])
 
         # 评分越低（质量越高），重要性越大
-        if best_score < -100:  # 极高质量动作
-            return 0.9
-        elif best_score < 0:  # 高质量动作
-            return 0.7
-        elif best_score < 50:  # 中等质量
-            return 0.5
+        if best_score < -500:  # 极高质量动作（如即将获胜）
+            return 1.0
+        elif best_score < -100:  # 高质量动作
+            return 0.8
+        elif best_score < 0:  # 中等质量
+            return 0.6
+        elif best_score < 50:  # 一般质量
+            return 0.4
         else:  # 低质量
-            return 0.3
+            return 0.2
 
     def _heuristic_filter(self, actions, game_state):
         """使用启发式评估筛选最有前途的动作（优化版）"""
-        # 排除角落位置
-        valid_actions = [a for a in actions if 'coords' not in a or a['coords'] not in CORNERS]
+        # 排除角落位置（除非是特殊动作）
+        valid_actions = []
+        for a in actions:
+            if a.get('type') == 'remove':  # 移除动作不过滤
+                valid_actions.append(a)
+            elif 'coords' not in a or a['coords'] not in CORNERS:
+                valid_actions.append(a)
+
         if not valid_actions:
             return actions[:1]  # 如果没有有效动作，返回第一个动作
 
@@ -999,6 +1112,8 @@ class myAgent(Agent):
         # 动态调整候选数量
         if self.time_manager.phase == GamePhase.CRITICAL:
             limit = min(20, len(scored_actions))  # 关键时刻考虑更多选项
+        elif self.time_manager.get_remaining_time() < 0.3:
+            limit = min(8, len(scored_actions))  # 时间紧张时减少候选
         else:
             limit = self.candidate_limit
 
@@ -1007,6 +1122,9 @@ class myAgent(Agent):
 
     def _mcts_search(self, candidate_actions, game_state):
         """使用MCTS分析候选动作（优化版）"""
+        if not candidate_actions:
+            return None
+
         # 准备MCTS状态
         mcts_state = self._prepare_state_for_mcts(game_state, candidate_actions)
         root = Node(mcts_state)
@@ -1021,6 +1139,9 @@ class myAgent(Agent):
         if self.time_manager.phase == GamePhase.CRITICAL:
             max_iterations = min(SIMULATION_LIMIT * 2, 400)
             self.simulation_depth = 6
+        elif self.time_manager.get_remaining_time() < 0.3:
+            max_iterations = 50  # 时间紧张时快速决策
+            self.simulation_depth = 3
         else:
             max_iterations = SIMULATION_LIMIT
             self.simulation_depth = 4
@@ -1029,6 +1150,10 @@ class myAgent(Agent):
         iterations = 0
         time_check_interval = 10  # 每10次迭代检查一次时间
 
+        # 新增：早期终止相关变量
+        best_child_visits = defaultdict(int)
+        dominant_threshold = 0.7  # 如果某个选择占70%以上访问，可以提前终止
+
         while not self.time_manager.is_timeout() and iterations < max_iterations:
             iterations += 1
 
@@ -1036,6 +1161,11 @@ class myAgent(Agent):
             node = root
             while node.is_fully_expanded() and node.children:
                 node = node.select_child()
+                if node is None:  # BUG修复：检查空节点
+                    break
+
+            if node is None:
+                continue
 
             # 2. 扩展阶段
             if node.visits > 0 and not node.is_fully_expanded():
@@ -1051,15 +1181,28 @@ class myAgent(Agent):
                 node.update(value)
                 node = node.parent
 
-            # 定期时间检查（减少系统调用）
-            if iterations % time_check_interval == 0 and self.time_manager.is_timeout():
-                break
+            # 定期检查
+            if iterations % time_check_interval == 0:
+                # 时间检查
+                if self.time_manager.is_timeout():
+                    break
 
-        # 选择最佳动作（访问次数最多的子节点）
+                # 早期终止检查
+                if iterations > 50 and root.children:
+                    max_visits = max(child.visits for child in root.children)
+                    total_visits = sum(child.visits for child in root.children)
+                    if total_visits > 0 and max_visits / total_visits > dominant_threshold:
+                        # 某个选择明显占优，提前结束
+                        break
+
+        # 记录迭代次数
+        self.performance_stats['mcts_iterations'].append(iterations)
+
+        # 选择最佳动作
         if not root.children:
             return candidate_actions[0] if candidate_actions else None
 
-        # 选择访问次数最多的子节点
+        # 根据访问次数选择（探索充分的选择）
         best_child = max(root.children, key=lambda c: c.visits)
 
         # 记录移动历史
@@ -1091,13 +1234,20 @@ class myAgent(Agent):
             # 根据游戏阶段调整启发式比例
             if self.time_manager.phase == GamePhase.CRITICAL:
                 heuristic_prob = 0.95  # 关键时刻更依赖启发式
+            elif current_depth == 1:
+                heuristic_prob = 0.9  # 第一步更重要
             else:
                 heuristic_prob = 0.85
 
             # 选择动作
             if random.random() < heuristic_prob:
                 # 使用启发式选择动作
-                scored_actions = [(a, ActionEvaluator.evaluate_action_quality(state_copy, a)) for a in actions]
+                # 优化：只评估前几个最有希望的动作
+                sample_size = min(10, len(actions))
+                sampled_actions = actions[:sample_size] if len(actions) <= sample_size else random.sample(actions,
+                                                                                                          sample_size)
+
+                scored_actions = [(a, ActionEvaluator.evaluate_action_quality(state_copy, a)) for a in sampled_actions]
                 scored_actions.sort(key=lambda x: x[1])
                 action = scored_actions[0][0] if scored_actions else random.choice(actions)
             else:
@@ -1106,11 +1256,28 @@ class myAgent(Agent):
             # 应用动作
             state_copy = self.fast_simulate(state_copy, action)
 
+            # 检查是否达到终止状态（获胜）
+            if self._check_terminal_state(state_copy):
+                break
+
             # 模拟卡牌选择（专门针对5张展示牌变体）
             self._simulate_card_selection(state_copy)
 
         # 评估最终状态
         return StateEvaluator.evaluate(state_copy)
+
+    def _check_terminal_state(self, state):
+        """检查是否达到终止状态"""
+        board = state.board.chips
+        # 简化检查：只检查是否有5连
+        for i in range(10):
+            for j in range(10):
+                if board[i][j] not in [0, '0'] and board[i][j] not in CORNERS:
+                    color = board[i][j]
+                    for dx, dy in DIRECTIONS:
+                        if ActionEvaluator._count_consecutive_fast(board, i, j, dx, dy, color) >= 5:
+                            return True
+        return False
 
     def fast_simulate(self, state, action):
         """快速模拟执行动作（优化版）"""
@@ -1119,9 +1286,11 @@ class myAgent(Agent):
         # 处理放置动作
         if action['type'] == 'place' and 'coords' in action:
             r, c = action['coords']
-            color = self.my_color
-            if hasattr(state, 'current_player_id'):
+            # BUG修复：确定正确的颜色
+            if hasattr(state, 'current_player_id') and hasattr(state, 'agents'):
                 color = state.agents[state.current_player_id].colour
+            else:
+                color = self.my_color
             new_state.board.chips[r][c] = color
             self._update_hand(new_state, action)
 
@@ -1139,10 +1308,13 @@ class myAgent(Agent):
             return
         card = action['play_card']
         try:
+            player_id = getattr(state, 'current_player_id', self.id)
             if (hasattr(state, 'agents') and
-                    hasattr(state.agents[self.id], 'hand')):
-                state.agents[self.id].hand.remove(card)
-        except:
+                    0 <= player_id < len(state.agents) and
+                    hasattr(state.agents[player_id], 'hand')):
+                if card in state.agents[player_id].hand:  # BUG修复：检查卡牌是否存在
+                    state.agents[player_id].hand.remove(card)
+        except Exception:
             pass
 
     def _simulate_card_selection(self, state):
@@ -1164,11 +1336,12 @@ class myAgent(Agent):
             # 更新玩家手牌
             if hasattr(state, 'current_player_id'):
                 player_id = state.current_player_id
-                if 0 <= player_id < len(state.agents):
+                if 0 <= player_id < len(state.agents) and hasattr(state.agents[player_id], 'hand'):
                     state.agents[player_id].hand.append(best_card)
 
             # 从展示区移除所选卡牌
-            state.display_cards.remove(best_card)
+            if best_card in state.display_cards:  # BUG修复：检查卡牌是否存在
+                state.display_cards.remove(best_card)
 
             # 补充一张牌（如果有牌堆）
             if hasattr(state, 'deck') and state.deck:
