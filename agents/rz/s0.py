@@ -1034,16 +1034,20 @@ class SearchTree:
     def set_root(self, root):
         self.root = root
 
-    def search(self, depth):
-        # print(depth)
-        node = self.root
-        if depth == 1:
-            node.expand()
-            for c in node.children:
-                c.evaluate()
-                c.back_propagation()
-        else:
+    def search(self, depth, start_time):
+        self._search_node(self.root, depth, start_time)
+
+    def _search_node(self, node, depth, start_time):
+        if time.time() - start_time > THINKTIME:
+            return
+        if depth == 0:
             node.evaluate()
+            if node != self.root:
+                node.back_propagation()
+        else:
+            node.expand()
+            for child in node.children:
+                self._search_node(child, depth - 1, start_time)
 
     def get_best_action(self):
         return self.root.get_best_action()
@@ -1083,15 +1087,10 @@ class myAgent:
         print("-" * 32)
         try:
             action = self.SelectActionDB(actions, game_state)
-            # if action not in actions:
-            #     print("MY ACTION is", action)
-            #     print("LEGAL ACTIONS")
-            #     for a in actions:
-            #         print(a)
-            # if action is None:
-            #     print("NO ACTIONS")
-            #     action = random.choice(actions)
+            if action not in actions:
+                action = random.choice(actions)
         except Exception:
+            traceback.print_exc()
             print("ERROR MY ACTION is", action)
             print("LEGAL ACTIONS")
             for a in actions:
@@ -1101,6 +1100,7 @@ class myAgent:
         return action
 
     def SelectActionDB(self, actions, game_state):
+        start_time = time.time()
         self.extract_info(game_state)
         root_state = myState(
             self.id,
@@ -1119,12 +1119,17 @@ class myAgent:
             None
         )
         self.search_tree.set_root(root_node)
-        self.search_tree.search(1)
-        best_action1, v1 = self.search_tree.get_best_action()
+        self.search_tree.search(0, start_time)
+        best_action1, v1 = root_node.get_best_action()
+        depth = 1
+        while time.time() - start_time < THINKTIME:
+            best_action1, v1 = root_node.get_best_action()
+            self.search_tree.set_root(root_node)
+            self.search_tree.search(depth, start_time)
+            depth += 1
         if actions[0].get("type") == "trade":
             if not best_action1.get("type").startswith("trade"):
                 best_action1 = {'play_card':None, 'draft_card':None, 'type':'trade', 'coords':None}
-        print(best_action1, v1)
         return best_action1
 
     def extract_info(self, game_state: SequenceState):
@@ -1171,29 +1176,3 @@ class myAgent:
                 self.op_hand.remove(each)
             else:
                 self.deck.remove(each)
-
-
-if __name__ == '__main__':
-    chips = [['#', 'b', '_', '_', '_', '_', 'b', '_', 'r', '#'], ['_', 'r', '_', 'b', 'b', '_', 'r', 'r', 'b', '_'], ['_', '_', '_', 'b', 'r', 'r', 'O', 'b', 'r', 'r'], ['_', 'r', 'X', 'r', 'b', 'b', 'O', 'r', '_', 'b'], ['_', 'b', 'b', 'X', 'b', 'r', 'O', '_', 'b', 'b'], ['b', 'r', 'r', 'r', 'X', 'b', 'O', 'b', 'r', 'r'], ['_', '_', 'r', 'r', 'b', 'X', 'O', '_', 'r', '_'], ['r', '_', 'b', '_', 'b', 'r', 'X', 'r', 'b', 'r'], ['_', '_', 'r', 'r', 'b', 'b', 'b', 'b', 'r', 'b'], ['#', 'b', 'r', 'r', '_', 'r', 'b', '_', '_', '#']]
-
-
-    myhand = ['8c', 'ac', 'kd', '6s', '2d', '9c']
-    draft = ['4h', '7d', '8s', '7s', '9d']
-    print(reconstruct_actions(chips, myhand, draft, True, "r"))
-    state = myState(
-        1,
-        chips,
-        myhand,
-        ["1s"],
-        draft,
-        ["1h"]
-    )
-    node = Node(
-        state,
-        None,
-        None
-    )
-    search_tree = SearchTree(node)
-    search_tree.search(1)
-    best_action, v = search_tree.get_best_action()
-    print(best_action)
