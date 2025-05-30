@@ -4,7 +4,7 @@
 # Method:   Three Step Analyse
 # Details:
 #   Iterative Deepening Minimax Search
-
+#
 # -------------------------------- IMPORTS --------------------------------
 import numpy as np
 import time
