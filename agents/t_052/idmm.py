@@ -1,9 +1,9 @@
 # -------------------------------- INFO --------------------------------
-# Author:   Ruifan Zhang
+# Author:   Big Hero 3 Team
 # Purpose:  An Sequence AI Agent
 # Method:   Three Step Analyse
 # Details:
-#   Greedy select best position and best card
+#   Iterative Deepening Minimax Search
 
 # -------------------------------- IMPORTS --------------------------------
 import numpy as np
