@@ -144,7 +144,6 @@ class myAgent(Agent):
                     blocks += 1
                     break
 
-            # 评分逻辑：考虑连子长度和封堵情况
             if count >= 5:
                 total_score += 1000
             elif count == 4 and blocks == 0:
