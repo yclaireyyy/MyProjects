@@ -4,7 +4,7 @@
 # Method:   Three Step Analyse
 # Details:
 #   Select best position and best card
-
+#
 # -------------------------------- IMPORTS --------------------------------
 import random
 import numpy as np
