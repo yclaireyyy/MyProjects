@@ -1,15 +1,20 @@
 # -------------------------------- INFO --------------------------------
-# Author:   All Big Hero 3 Team Member
+# Author:   Ruifan Zhang
 # Purpose:  An Sequence AI Agent
 # Method:   Three Step Analyse
 # Details:
-#   Select best position and best card
-#
+#   Step 1: Simulation all my possible
+
 # -------------------------------- IMPORTS --------------------------------
 import random
 import numpy as np
+
 from copy import deepcopy
 from collections import deque
+
+from pygltflib import SCALE
+
+from template import Agent
 from Sequence.sequence_model import *
 from Sequence.sequence_utils import *
 
@@ -38,19 +43,17 @@ DIRECTIONS = [
 
 HEART_POS = [(4, 4), (4, 5), (5, 4), (5, 5)]
 USE_POSITION_WEIGHT = True
-PLACE_REMOVE_SCALE = -0.2
-PLACE_BIAS = 0.22
-REMOVE_BIAS = 0.42
 SMOOTH = 0.1
-SCALE = 10.5
+SCALE = 10
 x = np.arange(10).reshape(-1, 1)
 y = np.arange(10).reshape(1, -1)
 z = (x - 4.5) ** 2 + (y - 4.5) ** 2
 POSITION_WEIGHTS = np.exp(-SMOOTH * z)
 POSITION_WEIGHTS *= SCALE
-
-HEART_PRE_BIAS = 0
-POSITION_WEIGHTS[HEART_POS] += HEART_PRE_BIAS
+for i in range(10):
+    for j in range(10):
+        print(f"{POSITION_WEIGHTS[i,j]:0.2f}",end=" ")
+    print()
 
 
 # -------------------------------- UTILS --------------------------------
@@ -135,15 +138,12 @@ def advanced_actions(chips, normal, one_eyed_jacks, two_eyed_jacks, drafts, allo
     return normal_actions, one_eyed_jacks_actions, two_eyed_jacks_actions
 
 
-def exp_weight(values, ln, block):
+def exp_weight(values, ln):
     # print(values, ln)
     res = 0
     for v in values:
-        if ln and v == 4:
-            if block:
-                return 1000
-            else:
-                return float("inf")
+        if ln == 1 and v == 4:
+            res = float("inf")
         res += 2.718 ** v
     return res
 
@@ -151,15 +151,15 @@ def exp_weight(values, ln, block):
 def heart_weight(my, op):
     # 硬编码所有 (my, op) → (place, remove)
     table = {
-        (0, 0): (15, 0),
+        (0, 0): (10, 0),
         (1, 1): (20, 10),
         (2, 2): (0, 30),
 
         (1, 0): (30, 0),
-        (0, 1): (20, 0),
+        (0, 1): (10, 0),
 
         (2, 0): (50, 0),
-        (0, 2): (30, 0),
+        (0, 2): (10, 0),
 
         (0, 3): (float('inf'), 100),
         (3, 0): (float('inf'), 0),
@@ -209,8 +209,10 @@ class BoardEvaluator:
         line_values, (red_heart, blue_heart) = BoardEvaluator.evaluate_board(chips)
         # print(line_values)
         seq = (line_values[0][-1], line_values[1][-1])
+        place_bias = 0.25
+        remove_bias = 0.45
         weight_fn = exp_weight
-        pos_weight = np.zeros((3, 10, 10))
+        pos_weight = np.zeros((3,10,10))
         combined = {
             0: {'place': np.zeros((10, 10), dtype=np.float32),
                 'remove': np.zeros((10, 10), dtype=np.float32)},
@@ -226,21 +228,19 @@ class BoardEvaluator:
                         pos_weight[0][r][c] = 1
                         place_4 = values[player]['place'][:, r, c]
                         block_4 = values[player]['block'][:, r, c]
-                        place_val = weight_fn(place_4, seq[player], False)
-                        block_val = weight_fn(block_4, seq[1 - player], True)
-                        total = (1 + PLACE_BIAS) * place_val + (1 - PLACE_BIAS) * block_val
-                        total *= (1 + PLACE_REMOVE_SCALE)
+                        place_val = weight_fn(place_4, seq[player])
+                        block_val = weight_fn(block_4, seq[1 - player])
+                        total = (1 + place_bias) * place_val + (1 - place_bias) * block_val
                         combined[player]['place'][r][c] = total
 
                     # ----- 移除类：对方活子 -----
                     elif ((player == 0 and cell == BLU) or (player == 1 and cell == RED)):
-                        pos_weight[player + 1][r][c] = 1
+                        pos_weight[player+1][r][c] = 1
                         remove_4 = values[player]['removal'][:, r, c]
                         override_4 = values[player]['override'][:, r, c]
-                        remove_val = weight_fn(remove_4, seq[1 - player], False)
-                        override_val = weight_fn(override_4, seq[player], False)
-                        total = (1 + REMOVE_BIAS) * remove_val + (1 - REMOVE_BIAS) * override_val
-                        total *= (1 - PLACE_REMOVE_SCALE)
+                        remove_val = weight_fn(remove_4, seq[1 - player])
+                        override_val = weight_fn(override_4, seq[player])
+                        total = (1 + remove_bias) * remove_val + (1 - remove_bias) * override_val
                         combined[player]['remove'][r][c] = total
 
         place_heart_red, remove_heart_red = heart_weight(red_heart, blue_heart)
@@ -256,10 +256,10 @@ class BoardEvaluator:
             elif chips[x][y] == RED:
                 combined[1]['remove'][x][y] = max(combined[1]['remove'][x][y], remove_heart_blue)
         if USE_POSITION_WEIGHT:
-            combined[0]['place'] += POSITION_WEIGHTS * pos_weight[0]
-            combined[1]['place'] += POSITION_WEIGHTS * pos_weight[0]
-            combined[0]['remove'] += POSITION_WEIGHTS * pos_weight[1]
-            combined[1]['remove'] += POSITION_WEIGHTS * pos_weight[2]
+            combined[0]['place'] += POSITION_WEIGHTS*pos_weight[0]
+            combined[1]['place'] += POSITION_WEIGHTS*pos_weight[0]
+            combined[0]['remove'] += POSITION_WEIGHTS*pos_weight[1]
+            combined[1]['remove'] += POSITION_WEIGHTS*pos_weight[2]
         return combined
 
     @staticmethod
@@ -413,7 +413,6 @@ class BoardEvaluator:
             x = x_start + i * dx
             y = y_start + i * dy
             c = chips[x][y]
-
             counts[c] += 1
             pos_queue.append((x, y))
 
@@ -605,92 +604,202 @@ class BoardEvaluator:
         return card_values
 
 
-class myAgent:
+class myAgent(Agent):
     def __init__(self, _id):
-        self.id = _id
+        super().__init__(_id)
+        # ---------- basic game info ----------
+        self.deck = [
+            (r + s)
+            for r in ['2', '3', '4', '5', '6', '7', '8', '9', 't', 'j', 'q', 'k', 'a']
+            for s in ['d', 'c', 'h', 's']
+        ]
+        self.deck = self.deck * 2
+        self.chips = None
+        self.last_draft = []
+        self.my_score = 0
+        self.op_score = 0
+        # ---------- basic my info ----------
+        self.clr = BLU if _id % 2 else RED
+        self.sclr = BLU_SEQ if _id % 2 else RED_SEQ
+        self.my_hand = []
+        self.my_normal = []
+        self.my_dead = []
+        self.my_one_eyed_jacks = []
+        self.my_two_eyed_jacks = []
+        self.draft = []
+        self.my_trade = False
+        # ---------- basic opp info ----------
+        self.oc = RED if _id % 2 else BLU
+        self.os = RED_SEQ if _id % 2 else BLU_SEQ
+        self.op_trade = True
+        self.op_trace_last = 0
+        self.op_hand = []
+        self.op_normal = []
+        self.op_dead = []
+        self.op_one_eyed_jacks = []
+        self.op_two_eyed_jacks = []
 
     def SelectAction(self, actions, game_state: SequenceState):
-
-        myself = game_state.agents[self.id]
-        hand_cards = myself.hand
-        board = game_state.board
-        clr = myself.colour
-        sclr = myself.seq_colour
-        oc = myself.opp_colour
-        os = myself.opp_seq_colour
-        normal = []
-        o_jacks = []
-        t_jacks = []
-        d_normal = []
-        d_o_jacks = []
-        d_t_jacks = []
-        all_positions = []
-        new_actions = []
-        chips = board.chips
-        drafts = board.draft
-
-        # if len(drafts) < 5:
-        #     print(actions)
-        values = BoardEvaluator.combine_value(chips)
-        my_value = values[self.id]
-        for each in hand_cards:
-            if each in ONE_EYED_JACKS:
-                o_jacks.append(each)
-            elif each in TWO_EYED_JACKS:
-                t_jacks.append(each)
-            else:
-                normal.append(each)
-
-        for each in drafts:
-            if each in ONE_EYED_JACKS:
-                d_o_jacks.append(each)
-            elif each in TWO_EYED_JACKS:
-                d_t_jacks.append(each)
-            else:
-                d_normal.append(each)
-
-        for each in normal:
-            positions = get_normal_pos(chips, each)
-            for (r, c) in positions:
-                if (r, c) not in all_positions:
-                    all_positions.append((r, c))
-                    new_actions.append((each, (r, c), "place", my_value["place"][r][c]))
-        for each in t_jacks:
-            positions = get_two_eyed_pos(chips)
-            for (r, c) in positions:
-                if (r, c) not in all_positions:
-                    all_positions.append((r, c))
-                    new_actions.append((each, (r, c), "place", my_value["place"][r][c]))
-        for each in o_jacks:
-            positions = get_one_eyed_pos(chips, oc)
-            for (r, c) in positions:
-                if (r, c) not in all_positions:
-                    all_positions.append((r, c))
-                    new_actions.append((each, (r, c), "remove", my_value["remove"][r][c]))
-        if d_t_jacks:
-            d = d_t_jacks[0]
-        elif d_o_jacks:
-            d = d_o_jacks[0]
-        else:
-            dlist = []
-            for each in d_normal:
-                positions = get_normal_pos(chips, each)
-                for (r, c) in positions:
-                    dlist.append((each, my_value["place"][r][c]))
-            dlist.sort(key=lambda x: x[1], reverse=True)
-            if len(dlist):
-                d = dlist[0][0]
-            else:
-                d = drafts[0]
-        if actions[0].get("type") == "trade":
-            action = deepcopy(actions[0])
-            action["draft_card"] = d
-        else:
-            new_actions.sort(key=lambda a: a[3], reverse=True)
-            action = {
-                "type": new_actions[0][2],
-                "play_card": new_actions[0][0],
-                "draft_card": d,
-                "coords": new_actions[0][1],
-            }
+        self.extract_info(game_state)
+        n, o, t = advanced_actions(
+            self.chips,
+            self.my_normal,
+            self.my_one_eyed_jacks,
+            self.my_two_eyed_jacks,
+            self.draft,
+            not self.my_trade,
+            self.oc
+        )
+        try:
+            for _, _, trade in n:
+                if trade:
+                    for eachline in self.chips:
+                        print(eachline)
+                    print(self.draft)
+                    print(self.my_hand)
+                    print(trade)
+                    print(n)
+                    print(o)
+                    print(t)
+                    break
+        except Exception as e:
+            print(e)
+        action = random.choice(actions)
+        # print(action)
         return action
+
+    def extract_info(self, game_state: SequenceState):
+        # At Start Remove cards in my hand from deck
+        if self.op_trace_last == 0:
+            for each in game_state.agents[self.id].hand:
+                self.deck.remove(each)
+        # Remove all unseen draft from deck
+        for each in game_state.board.draft:
+            if each not in self.last_draft:
+                self.deck.remove(each)
+        # Save current draft status
+        self.last_draft = []
+        for each in game_state.board.draft:
+            self.last_draft.append(each)
+        self.chips = deepcopy(game_state.board.chips)
+        self.draft = deepcopy(game_state.board.draft)
+        self.extract_my_info(game_state)
+        self.extract_opp_info(game_state)
+
+    def extract_my_info(self, game_state: SequenceState):
+        myself = game_state.agents[self.id]
+        self.my_trade = myself.trade
+        self.my_hand = deepcopy(myself.hand)
+        self.my_normal = []
+        self.my_one_eyed_jacks = []
+        self.my_two_eyed_jacks = []
+        for each in self.my_hand:
+            if each in ONE_EYED_JACKS:
+                self.my_one_eyed_jacks.append(each)
+            elif each in TWO_EYED_JACKS:
+                self.my_two_eyed_jacks.append(each)
+            else:
+                self.my_normal.append(each)
+        # print(f"normal: {self.normal}")
+        # print(f"one_eyed_jacks: {self.one_eyed_jacks}")
+        # print(f"two_eyed_jacks: {self.two_eyed_jacks}")
+        # print(f"draft: {self.draft}")
+
+    def extract_opp_info(self, game_state: SequenceState):
+        # Get what card opponent picked and discard
+        self.op_trade = False
+        trace = game_state.agents[1 - self.id].agent_trace.action_reward[self.op_trace_last:]
+        self.op_trace_last = len(game_state.agents[1 - self.id].agent_trace.action_reward)
+        picked = []
+        discarded = []
+        for action, r in trace:
+            if action["draft_card"] is not None:
+                picked.append(action["draft_card"])
+            if action["play_card"] is not None:
+                discarded.append(action["play_card"])
+        # Add all cards picked by opponent to op_hand
+        for each in picked:
+            self.op_hand.append(each)
+        # Remove from op_hand if we know it is in opponent's hand
+        # Otherwise remove it from deck
+        for each in discarded:
+            if each in self.op_hand:
+                self.op_hand.remove(each)
+            else:
+                self.deck.remove(each)
+
+
+if __name__ == "__main__":
+    # agent = myAgent(0)
+    test_chips = [[EMPTY for _ in range(10)] for _ in range(10)]
+    for x, y in COORDS["jk"]:
+        test_chips[x][y] = JOKER
+    test_chips = [
+        ['#', '_', '_', '_', '_', 'b', '_', '_', '_', '#'],
+        ['_', '_', '_', '_', '_', '_', 'b', '_', '_', '_'],
+        ['_', 'r', '_', 'r', '_', '_', '_', 'b', '_', '_'],
+        ['_', '_', '_', 'b', '_', '_', 'b', '_', 'r', 'r'],
+        ['_', '_', 'b', '_', '_', 'r', '_', '_', '_', '_'],
+        ['_', '_', '_', '_', '_', 'b', '_', '_', '_', '_'],
+        ['_', '_', '_', '_', '_', '_', 'r', 'r', '_', '_'],
+        ['r', '_', '_', 'r', '_', '_', '_', '_', '_', '_'],
+        ['b', '_', '_', '_', '_', 'b', '_', '_', 'b', '_'],
+        ['#', '_', 'r', 'r', '_', '_', '_', '_', '_', '#'],
+        ]
+    # pos = [(0,0),(0,9),(9,0),(9,9)]
+    # x, y = (0,0)
+    # for i in range(10):
+    #     while (x,y) in pos:
+    #         x = random.randint(0,9)
+    #         y = random.randint(0,9)
+    #     test_chips[x][y] = RED
+    #     pos.append((x,y))
+    #     while (x,y) in pos:
+    #         x = random.randint(0, 9)
+    #         y = random.randint(0, 9)
+    #     test_chips[x][y] = BLU
+    #     pos.append((x,y))
+    # for x, y in [(4, i) for i in range(5)]:
+    #     test_chips[x][y] = RED_SEQ
+    # test_chips[3][4] = RED
+    print("-" * 10 + "Original Board" + "-" * 10)
+    for each_line in test_chips:
+        print(each_line)
+    combined_value = BoardEvaluator.combine_value(test_chips)
+    for each_line in combined_value[0]["place"]:
+        for element in each_line:
+            print(f"{element:06.2f}", end=" ")
+        print()
+    # location_value = BoardEvaluator.evaluate_locations(test_chips)
+    # for i in range(4):
+    #     for each_line in location_value[0]["place"][i]:
+    #         print(each_line)
+    #     print()
+    # state_value = BoardEvaluator.evaluate_board(test_chips)
+    # print(state_value)
+    # card_value = BoardEvaluator.evaluate_cards()
+    # print(card_value)
+    # deck = deepcopy(agent.deck)
+    # random.shuffle(deck)
+    # my_hand = deck[:6]
+    # normal = []
+    # one_eyed_jacks = []
+    # two_eyed_jacks = []
+    #
+    # for each in my_hand:
+    #     if each in ONE_EYED_JACKS:
+    #         one_eyed_jacks.append(each)
+    #     elif each in TWO_EYED_JACKS:
+    #         two_eyed_jacks.append(each)
+    #     else:
+    #         normal.append(each)
+    #
+    # for each in normal:
+    #     print(each, get_normal_pos(test_chips, each, agent.oc))
+    # if one_eyed_jacks:
+    #     print("has one eyed jack")
+    #     print(get_one_eyed_pos(test_chips, one_eyed_jacks, agent.clr))
+    # if two_eyed_jacks:
+    #     print("has two eyed jack")
+    #     print(get_two_eyed_pos(test_chips, two_eyed_jacks, agent.clr))
+    #

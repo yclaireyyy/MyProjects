@@ -1,12 +1,11 @@
 # -------------------------------- INFO --------------------------------
-# Author:   All Big Hero 3 Team Member
+# Author:   Ruifan Zhang
 # Purpose:  An Sequence AI Agent
 # Method:   Three Step Analyse
 # Details:
 #   Select best position and best card
-#
+
 # -------------------------------- IMPORTS --------------------------------
-import random
 import numpy as np
 from copy import deepcopy
 from collections import deque
@@ -38,18 +37,19 @@ DIRECTIONS = [
 
 HEART_POS = [(4, 4), (4, 5), (5, 4), (5, 5)]
 USE_POSITION_WEIGHT = True
-PLACE_REMOVE_SCALE = -0.2
+PLACE_REMOVE_SCALE = -0.21
+OPPONENT_SCALE = 0.1
 PLACE_BIAS = 0.22
-REMOVE_BIAS = 0.42
+REMOVE_BIAS = 0.41
 SMOOTH = 0.1
-SCALE = 10.5
+SCALE = 11
 x = np.arange(10).reshape(-1, 1)
 y = np.arange(10).reshape(1, -1)
 z = (x - 4.5) ** 2 + (y - 4.5) ** 2
 POSITION_WEIGHTS = np.exp(-SMOOTH * z)
 POSITION_WEIGHTS *= SCALE
 
-HEART_PRE_BIAS = 0
+HEART_PRE_BIAS = 0.5
 POSITION_WEIGHTS[HEART_POS] += HEART_PRE_BIAS
 
 
@@ -135,15 +135,12 @@ def advanced_actions(chips, normal, one_eyed_jacks, two_eyed_jacks, drafts, allo
     return normal_actions, one_eyed_jacks_actions, two_eyed_jacks_actions
 
 
-def exp_weight(values, ln, block):
+def exp_weight(values, ln):
     # print(values, ln)
     res = 0
     for v in values:
-        if ln and v == 4:
-            if block:
-                return 1000
-            else:
-                return float("inf")
+        if ln == 1 and v == 4:
+            res = float("inf")
         res += 2.718 ** v
     return res
 
@@ -156,16 +153,15 @@ def heart_weight(my, op):
         (2, 2): (0, 30),
 
         (1, 0): (30, 0),
-        (0, 1): (20, 0),
+        (0, 1): (20, 10),
 
         (2, 0): (50, 0),
-        (0, 2): (30, 0),
+        (0, 2): (30, 20),
+        (2, 1): (50, 20),
+        (1, 2): (30, 50),
 
         (0, 3): (float('inf'), 100),
         (3, 0): (float('inf'), 0),
-
-        (2, 1): (50, 20),
-        (1, 2): (30, 50),
         (3, 1): (0, 200),
         (1, 3): (0, 100),
     }
@@ -226,8 +222,8 @@ class BoardEvaluator:
                         pos_weight[0][r][c] = 1
                         place_4 = values[player]['place'][:, r, c]
                         block_4 = values[player]['block'][:, r, c]
-                        place_val = weight_fn(place_4, seq[player], False)
-                        block_val = weight_fn(block_4, seq[1 - player], True)
+                        place_val = weight_fn(place_4, seq[player])
+                        block_val = weight_fn(block_4, seq[1 - player])
                         total = (1 + PLACE_BIAS) * place_val + (1 - PLACE_BIAS) * block_val
                         total *= (1 + PLACE_REMOVE_SCALE)
                         combined[player]['place'][r][c] = total
@@ -237,8 +233,8 @@ class BoardEvaluator:
                         pos_weight[player + 1][r][c] = 1
                         remove_4 = values[player]['removal'][:, r, c]
                         override_4 = values[player]['override'][:, r, c]
-                        remove_val = weight_fn(remove_4, seq[1 - player], False)
-                        override_val = weight_fn(override_4, seq[player], False)
+                        remove_val = weight_fn(remove_4, seq[1 - player])
+                        override_val = weight_fn(override_4, seq[player])
                         total = (1 + REMOVE_BIAS) * remove_val + (1 - REMOVE_BIAS) * override_val
                         total *= (1 - PLACE_REMOVE_SCALE)
                         combined[player]['remove'][r][c] = total
@@ -628,11 +624,9 @@ class myAgent:
         new_actions = []
         chips = board.chips
         drafts = board.draft
-
-        # if len(drafts) < 5:
-        #     print(actions)
         values = BoardEvaluator.combine_value(chips)
         my_value = values[self.id]
+        op_value = values[1 - self.id]
         for each in hand_cards:
             if each in ONE_EYED_JACKS:
                 o_jacks.append(each)
@@ -676,7 +670,7 @@ class myAgent:
             for each in d_normal:
                 positions = get_normal_pos(chips, each)
                 for (r, c) in positions:
-                    dlist.append((each, my_value["place"][r][c]))
+                    dlist.append((each, my_value["place"][r][c] + OPPONENT_SCALE * op_value["place"][r][c]))
             dlist.sort(key=lambda x: x[1], reverse=True)
             if len(dlist):
                 d = dlist[0][0]

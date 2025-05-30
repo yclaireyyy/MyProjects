@@ -12,14 +12,11 @@ This Wiki can be used as external documentation to the project.
 3. [Evolution and Experiments](Evolution)
 4. [Conclusions and Reflections](Conclusions-and-Reflections)
 
-
-
 You can structure your wiki pages in many different sections and styles. The above is just one example based on submissions that got a good grade in previous years :)
 
 # Youtube presentation
 
 [![IMAGE ALT TEXT HERE](http://img.youtube.com/vi/bnMl0d-RcPQ/0.jpg)](https://www.youtube.com/watch?v=bnMl0d-RcPQ)
-
 
 ## Team Members
 

@@ -1,12 +1,11 @@
 # -------------------------------- INFO --------------------------------
-# Author:   All Big Hero 3 Team Member
+# Author:   Ruifan Zhang
 # Purpose:  An Sequence AI Agent
 # Method:   Three Step Analyse
 # Details:
-#   Select best position and best card
-#
+#   Step 1: Simulation all my possible
+
 # -------------------------------- IMPORTS --------------------------------
-import random
 import numpy as np
 from copy import deepcopy
 from collections import deque
@@ -38,19 +37,14 @@ DIRECTIONS = [
 
 HEART_POS = [(4, 4), (4, 5), (5, 4), (5, 5)]
 USE_POSITION_WEIGHT = True
-PLACE_REMOVE_SCALE = -0.2
-PLACE_BIAS = 0.22
-REMOVE_BIAS = 0.42
 SMOOTH = 0.1
-SCALE = 10.5
+SCALE = 10
 x = np.arange(10).reshape(-1, 1)
 y = np.arange(10).reshape(1, -1)
 z = (x - 4.5) ** 2 + (y - 4.5) ** 2
 POSITION_WEIGHTS = np.exp(-SMOOTH * z)
 POSITION_WEIGHTS *= SCALE
 
-HEART_PRE_BIAS = 0
-POSITION_WEIGHTS[HEART_POS] += HEART_PRE_BIAS
 
 
 # -------------------------------- UTILS --------------------------------
@@ -135,15 +129,12 @@ def advanced_actions(chips, normal, one_eyed_jacks, two_eyed_jacks, drafts, allo
     return normal_actions, one_eyed_jacks_actions, two_eyed_jacks_actions
 
 
-def exp_weight(values, ln, block):
+def exp_weight(values, ln):
     # print(values, ln)
     res = 0
     for v in values:
-        if ln and v == 4:
-            if block:
-                return 1000
-            else:
-                return float("inf")
+        if ln == 1 and v == 4:
+            res = float("inf")
         res += 2.718 ** v
     return res
 
@@ -151,15 +142,15 @@ def exp_weight(values, ln, block):
 def heart_weight(my, op):
     # 硬编码所有 (my, op) → (place, remove)
     table = {
-        (0, 0): (15, 0),
+        (0, 0): (10, 0),
         (1, 1): (20, 10),
         (2, 2): (0, 30),
 
         (1, 0): (30, 0),
-        (0, 1): (20, 0),
+        (0, 1): (10, 0),
 
         (2, 0): (50, 0),
-        (0, 2): (30, 0),
+        (0, 2): (10, 0),
 
         (0, 3): (float('inf'), 100),
         (3, 0): (float('inf'), 0),
@@ -209,8 +200,10 @@ class BoardEvaluator:
         line_values, (red_heart, blue_heart) = BoardEvaluator.evaluate_board(chips)
         # print(line_values)
         seq = (line_values[0][-1], line_values[1][-1])
+        place_bias = 0.25
+        remove_bias = 0.45
         weight_fn = exp_weight
-        pos_weight = np.zeros((3, 10, 10))
+        pos_weight = np.zeros((3,10,10))
         combined = {
             0: {'place': np.zeros((10, 10), dtype=np.float32),
                 'remove': np.zeros((10, 10), dtype=np.float32)},
@@ -226,21 +219,19 @@ class BoardEvaluator:
                         pos_weight[0][r][c] = 1
                         place_4 = values[player]['place'][:, r, c]
                         block_4 = values[player]['block'][:, r, c]
-                        place_val = weight_fn(place_4, seq[player], False)
-                        block_val = weight_fn(block_4, seq[1 - player], True)
-                        total = (1 + PLACE_BIAS) * place_val + (1 - PLACE_BIAS) * block_val
-                        total *= (1 + PLACE_REMOVE_SCALE)
+                        place_val = weight_fn(place_4, seq[player])
+                        block_val = weight_fn(block_4, seq[1 - player])
+                        total = (1 + place_bias) * place_val + (1 - place_bias) * block_val
                         combined[player]['place'][r][c] = total
 
                     # ----- 移除类：对方活子 -----
                     elif ((player == 0 and cell == BLU) or (player == 1 and cell == RED)):
-                        pos_weight[player + 1][r][c] = 1
+                        pos_weight[player+1][r][c] = 1
                         remove_4 = values[player]['removal'][:, r, c]
                         override_4 = values[player]['override'][:, r, c]
-                        remove_val = weight_fn(remove_4, seq[1 - player], False)
-                        override_val = weight_fn(override_4, seq[player], False)
-                        total = (1 + REMOVE_BIAS) * remove_val + (1 - REMOVE_BIAS) * override_val
-                        total *= (1 - PLACE_REMOVE_SCALE)
+                        remove_val = weight_fn(remove_4, seq[1 - player])
+                        override_val = weight_fn(override_4, seq[player])
+                        total = (1 + remove_bias) * remove_val + (1 - remove_bias) * override_val
                         combined[player]['remove'][r][c] = total
 
         place_heart_red, remove_heart_red = heart_weight(red_heart, blue_heart)
@@ -256,10 +247,10 @@ class BoardEvaluator:
             elif chips[x][y] == RED:
                 combined[1]['remove'][x][y] = max(combined[1]['remove'][x][y], remove_heart_blue)
         if USE_POSITION_WEIGHT:
-            combined[0]['place'] += POSITION_WEIGHTS * pos_weight[0]
-            combined[1]['place'] += POSITION_WEIGHTS * pos_weight[0]
-            combined[0]['remove'] += POSITION_WEIGHTS * pos_weight[1]
-            combined[1]['remove'] += POSITION_WEIGHTS * pos_weight[2]
+            combined[0]['place'] += POSITION_WEIGHTS*pos_weight[0]
+            combined[1]['place'] += POSITION_WEIGHTS*pos_weight[0]
+            combined[0]['remove'] += POSITION_WEIGHTS*pos_weight[1]
+            combined[1]['remove'] += POSITION_WEIGHTS*pos_weight[2]
         return combined
 
     @staticmethod
@@ -609,7 +600,7 @@ class myAgent:
     def __init__(self, _id):
         self.id = _id
 
-    def SelectAction(self, actions, game_state: SequenceState):
+    def SelectAction(self, actions, game_state:SequenceState):
 
         myself = game_state.agents[self.id]
         hand_cards = myself.hand
@@ -628,9 +619,6 @@ class myAgent:
         new_actions = []
         chips = board.chips
         drafts = board.draft
-
-        # if len(drafts) < 5:
-        #     print(actions)
         values = BoardEvaluator.combine_value(chips)
         my_value = values[self.id]
         for each in hand_cards:
@@ -651,22 +639,22 @@ class myAgent:
 
         for each in normal:
             positions = get_normal_pos(chips, each)
-            for (r, c) in positions:
-                if (r, c) not in all_positions:
-                    all_positions.append((r, c))
-                    new_actions.append((each, (r, c), "place", my_value["place"][r][c]))
+            for (r,c) in positions:
+                if (r,c) not in all_positions:
+                    all_positions.append((r,c))
+                    new_actions.append((each, (r,c), "place", my_value["place"][r][c]))
         for each in t_jacks:
             positions = get_two_eyed_pos(chips)
-            for (r, c) in positions:
-                if (r, c) not in all_positions:
-                    all_positions.append((r, c))
-                    new_actions.append((each, (r, c), "place", my_value["place"][r][c]))
+            for (r,c) in positions:
+                if (r,c) not in all_positions:
+                    all_positions.append((r,c))
+                    new_actions.append((each, (r,c), "place", my_value["place"][r][c]))
         for each in o_jacks:
             positions = get_one_eyed_pos(chips, oc)
-            for (r, c) in positions:
-                if (r, c) not in all_positions:
-                    all_positions.append((r, c))
-                    new_actions.append((each, (r, c), "remove", my_value["remove"][r][c]))
+            for (r,c) in positions:
+                if (r,c) not in all_positions:
+                    all_positions.append((r,c))
+                    new_actions.append((each, (r,c), "remove", my_value["remove"][r][c]))
         if d_t_jacks:
             d = d_t_jacks[0]
         elif d_o_jacks:
@@ -675,13 +663,10 @@ class myAgent:
             dlist = []
             for each in d_normal:
                 positions = get_normal_pos(chips, each)
-                for (r, c) in positions:
+                for (r,c) in positions:
                     dlist.append((each, my_value["place"][r][c]))
-            dlist.sort(key=lambda x: x[1], reverse=True)
-            if len(dlist):
-                d = dlist[0][0]
-            else:
-                d = drafts[0]
+            dlist.sort(key=lambda x: x[1],reverse=True)
+            d = dlist[0][0]
         if actions[0].get("type") == "trade":
             action = deepcopy(actions[0])
             action["draft_card"] = d
@@ -694,3 +679,5 @@ class myAgent:
                 "coords": new_actions[0][1],
             }
         return action
+
+

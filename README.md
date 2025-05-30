@@ -46,7 +46,8 @@ The purpose of this project is to implement an autonomous agent that can play th
 
 This is a **group project** of 3 members. Now that you have a repo, the next thing to do is to register your team in the Project Contest Team Registration Form provided in the ED A3 release announcement (assuming you followed ED instruction and got a Canvas Teams Name) and tell the other students to join the team in GitHub Classroom. 
  
-**Your task** is to develop an autonomous Sequence agent to play the **Sequence Contest** by suitably modifying file [`agents/t_XXX/myTeam.py`](agents/t_052/MCTS+A*.py). Please replace "XXX" in "t_XXX" with your own Canvas Teams ID. For example, if your team's Canvas Teams Name is "Canvas Teams 1", then you should change your folder from `agents/t_XXX/` to `agents/t_001/`. The code submitted should aim to be commented at high standards, be error-free, and _never crash_. 
+**Your task** is to develop an autonomous Sequence agent to play the **Sequence Contest** by suitably modifying file [`agents/t_XXX/myTeam.py`](agents/t_052/myTeam.py). Please replace "XXX" in "t_XXX" with your own Canvas Teams ID. For example, if your team's Canvas Teams Name is "Canvas Teams 1", then you should change your folder from `agents/t_XXX/` to `agents/t_001/`. The code submitted should aim to be commented at high standards, be error-free, and _never crash_. 
+=======
 
 In your solution, you have to use at **least 3 AI-related techniques**. that have been discussed in the subject or explored by you independently, and you can combine them in any form. **We won't accept a final submission with less than 3 techniques**. Some candidate techniques that you may consider are:
 
