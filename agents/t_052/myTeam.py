@@ -1,5 +1,5 @@
 # -------------------------------- INFO --------------------------------
-# Author:   Ruifan Zhang
+# Author:   Big Hero 3 Team
 # Purpose:  An Sequence AI Agent
 # Method:   Three Step Analyse
 # Details:
