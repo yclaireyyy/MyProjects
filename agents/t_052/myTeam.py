@@ -1,5 +1,5 @@
 # -------------------------------- INFO --------------------------------
-# Author:   Big Hero 3 Team
+# Author:   All Big Hero 3 Team Member
 # Purpose:  An Sequence AI Agent
 # Method:   Three Step Analyse
 # Details:

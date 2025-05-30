@@ -37,10 +37,10 @@ DIRECTIONS = [
 
 HEART_POS = [(4, 4), (4, 5), (5, 4), (5, 5)]
 USE_POSITION_WEIGHT = True
-PLACE_REMOVE_SCALE = -0.21
+PLACE_REMOVE_SCALE = -0.2
 OPPONENT_SCALE = 0.1
-PLACE_BIAS = 0.22
-REMOVE_BIAS = 0.41
+PLACE_BIAS = 0.2
+REMOVE_BIAS = 0.4
 SMOOTH = 0.1
 SCALE = 11
 x = np.arange(10).reshape(-1, 1)
@@ -141,7 +141,7 @@ def exp_weight(values, ln):
     for v in values:
         if ln == 1 and v == 4:
             res = float("inf")
-        res += 2.718 ** v
+        res += 4 ** v
     return res
 
 
@@ -165,7 +165,8 @@ def heart_weight(my, op):
         (3, 1): (0, 200),
         (1, 3): (0, 100),
     }
-    return table[(my, op)]
+    res = table[(my, op)]
+    return (res[0]**2, res[1]**2)
 
 
 # -------------------------------- CLASSES --------------------------------
