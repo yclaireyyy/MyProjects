@@ -14,7 +14,7 @@
  - Expands 17 features to 50+ engineered features
  - Trains and evaluates 3 different ML algorithms
  - Generates performance comparison tables and visualizations
- - Runtime: approximately 10-15 minutes
+ - Runtime: Approximately 10-15 minutes
 
 ## Output ##
- - The program displays algorithm performance metrics and creates several plots comparing model effectiveness. All results are automatically displayed each time they are generated, and then dismissed once the output page is manually closed .
+ - The program displays algorithm performance metrics and creates several plots comparing model effectiveness. All results are automatically displayed each time they are generated, and then dismissed once the output page is *MANUALLY* closed .
