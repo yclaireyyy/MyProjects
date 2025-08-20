@@ -3,16 +3,7 @@
 This Wiki can be used as external documentation to the project.
 1. [Home and Introduction]()
 2. [Problem Analysis](Problem-Analysis)
-
-    2.1 [Approach One](AI-Method-1)
-
-    2.2 [Approach Two](AI-Method-2)
-
-    2.3 [Approach Three](AI-Method-3)
-
-    2.4 [Approach Four](AI-Method-4)
-
-3. [Evolution and Experiments](Experiments)
+3. [MCTS Approach](AI-Method-3)
 4. [Conclusions and Reflections](Conclusions-and-Reflections)
 
 ## Introduction
