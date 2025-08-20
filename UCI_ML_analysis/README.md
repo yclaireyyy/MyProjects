@@ -4,10 +4,10 @@
  - It is a machine learning project that predicts customer purchase intentions using UCI Online Shoppers dataset. Compares three algorithms (Naive Bayes, Random Forest, SVM) with comprehensive feature engineering.
 
 ## Requirements ##
- - pip install pandas numpy matplotlib seaborn scikit-learn ucimlrepo
+ - `pip install pandas numpy matplotlib seaborn scikit-learn ucimlrepo`
 
 ## How to Run ##
- - In the terminal of Pycharm or any other python IDE, input python online_shoppers_ml_project.py
+ - In the terminal of Pycharm or any other python IDE, input `python online_shoppers_ml_project.py`
 
 ## What It Does ##
  - Loads UCI Online Shoppers dataset automatically
