@@ -1,12 +1,14 @@
 # Analysis of the problem
 
+## Game State Analysis
+
 Sequence is a **partially observable**, **non-deterministic** strategic game environment with **discrete** action space and turn-based execution.
 
-## Partially Observable
+### Partially Observable
 
 Sequence game has different types of information.
 
-### Fully Observable:
+#### Fully Observable:
 
 1. **Board Chips**: Whether a piece is placed at each position and its ownership (own, opponent, whether it is a Sequence).
 
@@ -14,16 +16,16 @@ Sequence game has different types of information.
 
 3. **My Hand Cards**: The 6 cards currently held by the player.
 
-### Estimation through calculations:
+#### Estimation through calculations:
 
 1. **Opponent Hand**: It can be calculated through the opponent's picking and placing actions.
 2. **Remaining Deck**: It can be calculated thorugh known hand cards, public cards, and discarded cards from the deck.
 
-### Unobservable information:
+#### Unobservable information:
 
 1. **Order of Deck**: Since the deck is random, it is completely unknown which cards you or your opponent will draw in the future.
 
-## High Branching Factor
+### High Branching Factor
 
 The action space of Sequence may be very large in each round, mainly due to the following factors:
 
@@ -35,11 +37,22 @@ The action space of Sequence may be very large in each round, mainly due to the 
 
 4. **Opponent game dimension**: High branching factors exist not only in our decision-making, but also in the opponent's round, and the opponent also faces similar combination choices.
 
-## Equilibrium of Benefit
+So the branch factor is 
+
+$$BF=[(H+D)*P]^L$$
+
+Where H is number of hand card, D is number of draft card, P is average locations of each card and L is the game length.
+
+### Equilibrium of Benefit
 
 Every choice players make in the Sequence game involves balancing several objectives:
 
-1. **Building a connection (Sequence)**: In order to win the game, the player must either form two sequences or capture the Heart of the Board.
-2. **Blocking the opponent (Blocking)**: Players must also be aware of their opponent's layout and block possible connections.
-3. **Avoid being interfered with (Anti-Interference)**: During the game, it is also necessary to consider avoiding key positions be taken to maintain safety.
+1. **Form a Sequence**: In order to win the game, the player must either form two sequences or capture the Heart of the Board.
+
+2. **Blocking the opponent**: Players must also be aware of their opponent's layout and block possible connections.
+
+3. **Avoid being interfered with**: During the game, it is also necessary to consider avoiding key positions be taken to maintain safety.
+
 4. **Action Value Evaluation**: Players need to consider values of each location, and the opponent's possible reaction, and choose the action with the greatest benefit.
+
+5. **Intermediate state assessment**: Player need to estimate the intermediate state. If an action clould not form a Sequence or end the game, player need to give it a reasonable value.
