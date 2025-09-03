@@ -38,7 +38,7 @@ class OnlineShoppersMLProject:
             self.X = dataset.data.features
             self.y = dataset.data.targets
 
-            # Fix Bug: Safer target variable handling
+            # Target variable handling
             if hasattr(self.y, 'squeeze'):
                 self.y = self.y.squeeze()
 
@@ -48,7 +48,7 @@ class OnlineShoppersMLProject:
 
             # Ensure target variable is properly encoded (True/False -> 1/0)
             if self.y.dtype == 'object' or self.y.dtype == 'bool':
-                # Fix Bug: Safer type conversion
+                # Type conversion
                 unique_vals = self.y.unique()
                 if len(unique_vals) == 2:
                     # Boolean or binary classification
@@ -80,20 +80,20 @@ class OnlineShoppersMLProject:
         start_time = time.time()
 
         try:
-            # Fix: Ensure variable initialization
+            # variable initialization
             selected_features = []
 
             print("  Identifying numeric features...")
             numeric_features = self.X.select_dtypes(include=[np.number]).columns.tolist()
 
-            # Fix: Set random seed
+            # Set random seed
             np.random.seed(RANDOM_STATE)
             sample_size = min(5000, len(self.X))
 
             if len(self.X) > sample_size:
                 sample_idx = np.random.choice(len(self.X), sample_size, replace=False)
                 X_sample = self.X.iloc[sample_idx]
-                # Fix: Safer index handling
+                # Index handling
                 if isinstance(self.y, np.ndarray):
                     y_sample = self.y[sample_idx]
                 else:
@@ -181,7 +181,7 @@ class OnlineShoppersMLProject:
 
             plt.show()
 
-            # Fix: Direct variable usage instead of locals() check
+            # Direct variable usage
             print(f"\nDataset Overview:")
             print(f"  - Sample count: {len(self.X):,}")
             print(f"  - Feature count: {len(self.X.columns)}")
@@ -203,7 +203,7 @@ class OnlineShoppersMLProject:
         try:
             df = self.X.copy()
 
-            # Fix Bug: Safer categorical feature handling
+            # Categorical feature handling
             expected_categorical = ['Month', 'VisitorType', 'Weekend']
             categorical_features = []
 
@@ -216,7 +216,7 @@ class OnlineShoppersMLProject:
                         df[feature] = df[feature].fillna('Unknown')
                         df[f'{feature}_Encoded'] = encoder.fit_transform(df[feature].astype(str))
 
-            # Fix Bug: Check if required numeric columns exist
+            # Check if required numeric columns exist
             required_numeric = ['Administrative', 'Informational', 'ProductRelated',
                                 'Administrative_Duration', 'Informational_Duration', 'ProductRelated_Duration']
 
@@ -232,7 +232,7 @@ class OnlineShoppersMLProject:
             df['Total_Duration'] = df['Administrative_Duration'] + df['Informational_Duration'] + df[
                 'ProductRelated_Duration']
 
-            # Fix Bug: Avoid division by zero, use safer division
+            # Avoid division by zero
             df['Avg_Duration_Per_Page'] = np.where(df['Total_Pages'] > 0,
                                                    df['Total_Duration'] / df['Total_Pages'], 0)
 
@@ -270,7 +270,7 @@ class OnlineShoppersMLProject:
 
             # Group 2: Seasonal features
             if 'Month' in df.columns:
-                # Fix Bug: More flexible month mapping
+                # Flexible month mapping
                 def map_month_to_season(month):
                     month_str = str(month).lower()
                     if any(m in month_str for m in ['nov', 'dec', '11', '12']):
@@ -290,7 +290,7 @@ class OnlineShoppersMLProject:
 
             # Special day features
             if 'SpecialDay' in df.columns:
-                # Fix Bug: Safer binning operation
+                # Binning operation
                 try:
                     # Ensure data is in reasonable range
                     special_day_clean = pd.to_numeric(df['SpecialDay'], errors='coerce').fillna(0)
@@ -307,7 +307,7 @@ class OnlineShoppersMLProject:
 
             # Weekend features
             if 'Weekend' in df.columns:
-                # Fix Bug: Safer boolean conversion
+                # Boolean conversion
                 if df['Weekend'].dtype == 'bool':
                     df['Weekend_Numeric'] = df['Weekend'].astype(int)
                 else:
@@ -363,7 +363,7 @@ class OnlineShoppersMLProject:
                                          (df['BounceRates'] if 'BounceRates' in df.columns else 0) * 10 -
                                          (df['ExitRates'] if 'ExitRates' in df.columns else 0) * 5)
 
-            # Safer composite indicator calculation
+            # Composite indicator calculation
             bounce_rates = df['BounceRates'] if 'BounceRates' in df.columns else 0
             exit_rates = df['ExitRates'] if 'ExitRates' in df.columns else 0
 
@@ -393,7 +393,7 @@ class OnlineShoppersMLProject:
             if 'SpecialDay' in df.columns:
                 df['Interaction_3'] = pd.to_numeric(df['SpecialDay'], errors='coerce').fillna(0) * df['User_Engagement']
 
-            # Polynomial features - Fix Bug: Ensure non-negative values before squaring
+            # Polynomial features - Non-negative values before squaring
             if 'PageValues' in df.columns:
                 page_values_safe = np.maximum(df['PageValues'], 0)  # Ensure non-negative
                 df['PageValues_Squared'] = page_values_safe ** 2
@@ -410,7 +410,7 @@ class OnlineShoppersMLProject:
                 if col in df.columns:
                     df = df.drop(columns=[col])
 
-            # Fix Bug: More comprehensive infinite value handling
+            # Infinite value handling
             df = df.replace([np.inf, -np.inf], np.nan)
 
             # Get numeric columns only
@@ -456,10 +456,10 @@ class OnlineShoppersMLProject:
             if self.X_processed is None:
                 raise ValueError("Must run feature_engineering() first")
 
-            # Fix Bug: Variable name consistency issue
+            # Variable name consistency
             numeric_columns = self.X_processed.select_dtypes(include=[np.number]).columns
 
-            for column in numeric_columns:  # Fix Bug: Use consistent variable name
+            for column in numeric_columns: 
                 Q1 = self.X_processed[column].quantile(0.25)
                 Q3 = self.X_processed[column].quantile(0.75)
                 IQR = Q3 - Q1
@@ -477,7 +477,7 @@ class OnlineShoppersMLProject:
                 index=self.X_processed.index
             )
 
-            # Fix Bug: Check data quality after standardization
+            # Check data quality after standardization
             if np.any(np.isnan(self.X_processed.values)):
                 print("Warning: NaN values detected after standardization, filling with zeros")
                 self.X_processed = self.X_processed.fillna(0)
@@ -545,7 +545,7 @@ class OnlineShoppersMLProject:
                 best_params_per_fold = []
 
                 for fold, (train_idx, test_idx) in enumerate(outer_cv.split(self.X_processed, self.y)):
-                    # Fix Bug: Ensure index alignment
+                    # Ensure index alignment
                     try:
                         # Split data - use iloc to ensure correct indexing
                         X_train = self.X_processed.iloc[train_idx].copy()
@@ -578,7 +578,7 @@ class OnlineShoppersMLProject:
                         best_model = grid_search.best_estimator_
                         y_pred = best_model.predict(X_test)
 
-                        # Fix Bug: Safer probability prediction
+                        # Probability prediction
                         try:
                             if hasattr(best_model, 'predict_proba'):
                                 y_prob = best_model.predict_proba(X_test)
