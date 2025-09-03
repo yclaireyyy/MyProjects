@@ -2,7 +2,7 @@
 
 This Wiki can be used as external documentation to the project.
 1. [Home and Introduction]()
-2. [Problem Analysis](SequenceAgent/wiki-template/Problem-Analysis.md)
+2. [Problem Analysis](Problem-Analysis.md)
 3. [MCTS Approach](AI-Method-3)
 4. [Conclusions and Reflections](Conclusions-and-Reflections)
 
