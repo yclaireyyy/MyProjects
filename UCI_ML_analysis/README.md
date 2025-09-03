@@ -7,7 +7,7 @@
  - `pip install pandas numpy matplotlib seaborn scikit-learn ucimlrepo`
 
 ## How to Run ##
- - In the terminal of Pycharm or any other python IDE, input `python online_shoppers_ml_project.py`
+ - In the terminal of Pycharm or any other python IDE, input `python  IML.py`
 
 ## What It Does ##
  - Loads UCI Online Shoppers dataset automatically
