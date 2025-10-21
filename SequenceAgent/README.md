@@ -35,6 +35,10 @@ We recommend you to start by using search algorithms, given that you already imp
 > [!TIP] 
 > Remember to also read the [sequence.md](Sequence/sequence.md) file containing technical information that will come in handy.
 
-**GOOD LUCK and HAPPY SEQUENCE!**
+## Agent Guideline ##
+ - **For having a look at my agent, please refer to `agents-t_052-myAgent.py`.**
+ - For comprehensive technical documentation and insights, please see `wiki-template-Home.md` for more information.
+
+**HAPPY SEQUENCE!**
 
 
