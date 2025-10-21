@@ -35,9 +35,10 @@ We recommend you to start by using search algorithms, given that you already imp
 > [!TIP] 
 > Remember to also read the [sequence.md](Sequence/sequence.md) file containing technical information that will come in handy.
 
-## Agent Guideline ##
+# Agent Guideline #
  - **For having a look at my agent, please refer to `agents-t_052-myAgent.py`.**
  - For comprehensive technical documentation and insights, please see `wiki-template-Home.md` for more information.
+ - For Sequence game introduction and board status, please refer to `Sequence` for more information.
 
 **HAPPY SEQUENCE!**
 
