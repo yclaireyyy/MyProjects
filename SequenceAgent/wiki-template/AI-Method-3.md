@@ -1,4 +1,5 @@
-# AI Method 3 - MCTS
+# AI Method 4 - Greedy with Heuristic of Location Value
+
 
 # Table of Contents
   * [Motivation](#motivation)
@@ -8,132 +9,117 @@
      - [Advantages](#advantages)
      - [Disadvantages](#disadvantages)
   * [Future improvements](#future-improvements)
-
+ 
 ### Motivation  
-The motivation for choosing to use Monte Carlo Tree Search (MCTS) in the Sequence game is based on an in-depth analysis of the game's characteristics and considerations of computational limitations:
- - Complexity analysis of the state space: It can be seen that the Sequence game is played on a 10x10 chessboard, and each position may have multiple states. More importantly, the number of optional actions for each step is usually large. It can be seen from the processing of the actions list that the algorithm needs to select from a large number of candidate actions. The traditional complete search method is difficult to reach sufficient depth within a time limit of 0.95 seconds in such a search space.
- - Practical considerations of time constraints: The code sets a strict time limit of MAX_THINK_TIME = 1 seconds, which requires the algorithm to make decisions within an extremely short period of time. The anytime algorithm of MCTS enables it to stop the search at anytime and give the current optimal decision, which is crucial for satisfying real-time constraints.
- - Processing requirements for uncertain factors: There are hidden information such as hand cards in the game. So the algorithm needs to handle the randomness of card selection. The random simulation feature of MCTS is naturally suitable for handling this uncertainty and statistically evaluating the advantages and disadvantages of strategies through a large number of simulations.
- - The necessity of balancing exploration and utilization: The UCB formula in the code, exploitation + EXPLORATION_WEIGHT * sqrt(2 * log_visits/child_visits), reflects this requirement. This balancing mechanism can prevent the algorithm from falling into local optimum too early, while ensuring that promising branches are fully explored.
+
+We decided to design a efficient single-step greedy agent that can achieve near-optimal instant decision-making capabilities. We design this through evaluating each position's value. And lay it as the foundation for future expansion of search based agents.
+
+The most important thing here is our heuristic mechanism with sliding windows, which calculate the value of the target point.
+
+We used this sliding window to accelerate the caculation process. The key to winning the Sequence game is to form 2 sequence, however it takes too much calculation and too slow to evaluate each position one by one. So a sliding window of length 5 which moves step by step on the board in four directions: horizontally, vertically, and on two diagonals is applied. Each move only focuses on the current five blocks, calculating how many of our own chips, how many of opponent's chips, and how many chips have been connected in sequence. The advantage of the sliding window is that it doesn't need to count but to remember the previous results, add the new and pop that moves out then update the data instantly. 
+
+Different actions in the game have different effect and need to be calculated separately. Players' actions are divided into placing chips and removing opponents' chips. So different calculation methods are needed, Since the results of these two types of actions are also different. At the same time, these two actions need to be compared on the same level. So we also need to consider the balance between the two. For this reason, we split four values: "place value", "block value", "remove value" and "replace value". And in the last step, they are combined and balanced into a value function that measures the place action and the removal cation.
+
+Considering that the chess pieces in the center naturally have greater potential, we added a Gaussian distribution to all positions. This will make the agent more inclined to place the chess pieces in the center of the board.
+
+In this Greedy Agent, we also use an action splitting mechanism to calculate the value of the hand cards and the public cards separately, and finally select the combination with the greatest value, thereby further shortening the calculation time.
 
 [Back to top](#table-of-contents)
 
 ### Application  
-**Problem modeling**
-**1. State space model**
- - Status: Defined by the following components
- - 10x10 game board status (Each position can be 0/ empty, 'r'/ red, 'b'/ blue)
- - The current player's hand cards
- - Players of the current round
- - Available display cards (if applicable)
- - Action space:
-   - Place pieces: {' type ':' place ', 'coords: (r, c),' play_card: card}
-   - Remove pieces: {' type ', 'remove', 'coords: (r, c),' play_card: card}
-   - Select the card: {'type': 'trade', 'draft_card': card}
-   Objective: To form five sub-lines (horizontally, vertically, or diagonally)
 
-**Implementation details of MCTS**
- - Tree Policy
-   - Use the UCB1 formula: UCB = Average reward + C * sqrt(ln(number of visits to the parent node)/Number of visits to the child node)
-   - The exploration weight C = 1.2, balancing exploration and utilization
-   - Combine heuristic evaluation to adjust the UCB score and improve the search efficiency
+#### Position Value
 
- - Simulation Policy
-   - euristic guided random simulation**
-   - Use 95% heuristic selection in the critical stage and 85% in the general case
-   - Give priority to high-quality actions and avoid complete randomness
+A window can form a sequence only if it meets the following conditions: there are only its own chips and spaces in the 5 grids, and it contains at most 1 sequence chip. For each position, it is in at most 20 such windows (5 windows in each of the horizontal and two vertical diagonals), and considering that there is only 1 sequence can be formed at most on common in each direction. We take the most likely window as the window to evaluate the value of this position.
 
- - Reward function based on multi-factor state assessment
-   - Location value: Central area (1.5 weight), marginal area (0.8 weight)
-   - Sequence potential: Exponential scoring system (1 =10 points, 2 =100 points, 3 =1000 points, 4 =10000 points)
-   - Defensive value: Prevent the opponent from forming a threatening sequence
-   - Central control: Control the rewards of hotspots (4,4)-(5,5)
+For each window, we count the following information:
+    1. Number of normal chips of ours
+    2. Number of sequence chips of ours
+    3. Number of normal chips of opponent's
+    4. Number of sequence chips of opponent's
+    5. Number of Empty
+    6. Number of Jokers
 
- - Number of iterations and depth
-   - Under normal circumstances: 200 iterations, simulation depth of 4 layers
-   - Critical moment: 400 iterations, simulation depth of 6 layers
-   - Time is tight: 50 iterations, simulation depth of 3 layers
-   - Dynamic adjustment is based on game stages and remaining time
+Then, based on the state in the window, calculate the benefits of each type of action:
 
-**Key Optimization Techniques**
-1. The implementation of the three-layer LRU cache architecture
-   - The code implements a complete LRU (Least Recently Used) caching system to avoid duplicate calculations. This system contains three dedicated cache instances: ActionEvaluator, CardEvaluator, and StateEvaluator, each with carefully designed capacity limits
-   - The core mechanism of LRU caching tracks the access order through a double-ended queue (deque). When the cache reaches the upper capacity limit, the item that has not been used for the longest time will be automatically removed. The design of the cache key takes into account the essential characteristics of the computation. For example, action evaluation uses (board_hash, r, c) as the key to ensure that the evaluations at the same position in the same chessboard state can be directly reused.
-2. Hierarchical heuristic action filtering strategy
-   - The code implements a systematic action quality assessment system, and scores all candidate actions through the ActionEvaluator.evaluate_action_quality method. This evaluation system adopts a hierarchical priority design:
-   - First, there is the immediate success test. When an action can form five consecutive moves, a high score of 2000 points will be awarded. Secondly, there is threat detection. 500 points are awarded when a 4-match threat can be formed, and 1000 points are awarded when a 4-match threat can be prevented from the opponent. The third level is the sequence construction assessment. Three consecutive rounds earn 100 points, and two consecutive rounds earn 20 points. Finally, there is the position value assessment, which gives the base score by calculating the distance from the center of the chessboard.
-   - This hierarchical evaluation reduces the number of candidate actions from all possible actions originally to a maximum of 20 (at critical moments) or 12 (under normal circumstances), significantly improving the search efficiency.
-3. Time allocation mechanism for game stage perception
-   - The AdaptiveTimeManager class implements intelligent time allocation based on the progress of the game. This system determines the current game stage by analyzing the number of pieces on the chessboard:
-   - The system also includes a critical state detection mechanism, which identifies key decision points by scanning the chessboard to look for four consecutive threats. Once the critical state is detected, the time budget will increase to 0.9 seconds, the number of MCTS iterations will increase accordingly to 400 times, and the simulation depth will also increase from 4 layers to 6 layers.
-4. Efficient state replication strategy
-   - The traditional deep copy operation will become a performance bottleneck in the frequent state simulation of MCTS. The code implements a customized shallow copy strategy, custom_shallow_copy, which only performs deep copies on the data that will actually change:
-   - This selective replication strategy ensures necessary data isolation while avoiding unnecessary memory allocation and replication operations.
-5. Optimized continuous counting algorithm
-   - In the Sequence game, calculating the number of consecutive chess pieces is a frequently performed operation. The code implements the _count_consecutive_fast method to count consecutive chess pieces through bidirectional scanning:
-   - This algorithm reduces unnecessary calculations by interrupting the scan in advance, and uses min(count, 5) to ensure the validity of the return value.
+|Value type|Calculation conditions|Calculation formula|Typical scenario|
+|------|------|-------|------|
+|Place value|No opponent chips and own sequence ≤1|Total number of own chips|Build own sequence in this window|
+|Block value|No own chips and opponent sequence ≤1|Total number of opponent chips|Potential to block the opponent's sequence that is about to be completed|
+|Remove value|No own chips and opponent sequence ≤1|Total number of opponent chips|Destroy the opponent's key pieces|
+|Replace value|No opponent sequence and opponent chips ≤1|Total number of own chips|Immediately seize the pieces after pulling them out to form a new sequence|
+
+Example: There are 3 friendly chess pieces, 1 empty space, and 1 opponent chess piece in the window (no sequence):
+    - Place value = 0 (no chance to form a sequence in this window)
+    - Block value = 0 (our chip exist, and the condition is not met)
+    - Remove value = 1 (number of opponent chips)
+    - Replace value = 3 (number of our chips)
+
+
+We take the exponential sum of the values in four directions as its final value. We also consider the terminal state judgment: if there are 4  pieces in a certain window and there is a formed sequence, we directly mark the value as infinity (inf) and execute it first.
+
+Center Prior Value is calculated as following:
+
+$$ C_p(x, y) = SCALE*exp\left[-SMOOTH * \left[(x - 4.5)^2 + (y - 4.5)^2\right]\right] $$
+
+Heart area special judgment: If the player occupies 3 of the four center squares, the move value is set to inf; if the opponent occupies 3 squares, the interception value is set to inf.
+
+#### Value Balancing
+
+Considering that the value of Empty position contains of place value and block value, and the value of one-eyed-jack contains of remove value and replace value. These four values have different distributions due to different calculation methods. In order to balance, We introduced PLACE_BIAS, REMOVE_BIAS and PLACE_REMOVE_SCALE to balance these two actions.
+
+$$V_{place}' = (1 + PLACE\_BIAS) * v_{place} + (1 - PLACE\_BIAS) * v_{block}$$
+
+$$V_{remove}' = (1 + REMOVE\_BIAS) * v_{place} + (1 - REMOVE\_BIAS) * v_{block}$$
+
+$$V_{place} = (1 + PLACE\_REMOVE\_SCALE)*V_{place}'$$
+
+$$V_{remove} = (1 - PLACE\_REMOVE\_SCALE)*V_{block}'$$
+
+We used hill climbing for hyperparameter tuning to find the optimal parameter. We changed the value and compare each agent with and without change, evaluate its win rate, then select the best one.
+
+#### Action Analysis
+
+We split use card and pick card as two independently actions. Since the probability that the pick card is exactly the used card is very low.
+
+For use card, We first break down the hand into normal card, one_eyed_jack and two_eyed_jack. We analyze the legal positions of normal card and one_eyed_jack at first. Then, for two_eyed_jack, we only consider those positions beyond normal card. After evaluation we sort them by value and select the use action with the highest value.
+
+And for pick card, the draft card is also divided into 3 parts, but the difference is that if there is two_eyed_jack, take it directly. Else take one_eyed_jack if there exists one. Otherwise we analyze the value of the remaining cards and select the draft card with the highest value as the pick action.
+
+For dead card exchange, we always replace the first dead card with the most valuable draft card by default. When the game is deadlocked at the end and all public cards on the field are dead, the exchange action is randomly selected.
+
+Finally, the two parts are combined to synthesize the action that meets the specification and return the output.
 
 [Back to top](#table-of-contents)
 
 ### Solved Challenges
-**Challenge 1: Cache capacity control and memory management**
- - The LRU cache system implemented in the code demonstrates precise control over memory usage. Through the implementation of the LRUCache class, the system can find a balance point between performance improvement and memory consumption
- - Different types of caches have been assigned different capacity limits. The action evaluation cache is set at 10,000 items, while the card evaluation and status evaluation caches are set at 5,000 items. This differentiated capacity allocation reflects an in-depth understanding of various computing frequencies. Action evaluation is called more frequently in MCTS search, thus requiring a larger cache space.
-**Challenge 2: Computing Resource Allocation under strict time constraints**
- - The code sets a strict time limit through MAX_THINK_TIME = 0.95, which requires the algorithm to complete complex decision calculations within less than one second. The implementation of the AdaptiveTimeManager class demonstrates how to dynamically adjust the computational intensity
- - The system allocates different time budgets according to the game stages. It is 0.4 seconds in the opening stage, 0.6 seconds in the middle stage, 0.8 seconds in the endgame, and up to 0.9 seconds at critical moments. Meanwhile, the time-checking mechanism in the MCTS search loop ensures that the algorithm can stop in time
-**Challenge 3: Performance optimization requirements for state replication**
- - The MCTS algorithm requires frequent replication of the game state for simulation, and simple deep copying will bring significant performance overhead. The code implements an accurate state replication strategy through the custom_shallow_copy method:
- - This solution identifies that the chessboard state (chips) is the only data structure that will be modified in the simulation. Therefore, only this part is deeply copied, while other data structures are shallowly copied. This selective replication strategy significantly reduces the overhead of memory allocation and replication operations.
-**Challenge 4: Balancing the quality and randomness of the simulation strategy**
- - A purely random simulation strategy will generate a large number of low-quality simulation sequences, affecting the convergence effect of MCTS. The code implements the heuristic guided simulation strategy through the _heuristic_guided_simulate method
- - This hybrid strategy improves the simulation quality while maintaining the necessary randomness, and ADAPTS to different game stages by dynamically adjusting the proportion of heuristic usage.
-**Challenge 5: The stability issue of search convergence**
- - The convergence speed and stability of MCTS search directly affect the quality of decision-making. The code implements an early termination mechanism to solve the problem of search efficiency
- - When the access times of a certain action account for more than 70% of the total access times (dominant_threshold = 0.7), the algorithm considers that an obvious optimal choice has been found and the search can be terminated in advance. This mechanism not only improves the computational efficiency but also ensures the stability of decision-making.
-**Challenge 6: Effective Pruning of Action Space**
- - Facing a large number of possible action choices, how to quickly identify and filter out the most valuable candidate actions is a key challenge. The code implements systematic action screening through the _heuristic_filter method:
- - Meanwhile, the code also uses batch evaluation and sorting. This filtering process first eliminates obviously inferior choices such as corner positions, then ranks the remaining actions through quality assessment, and finally only retains the candidate actions ranked from the top 12 to 20 to participate in the MCTS search. This hierarchical filtering strategy significantly reduces the size of the search space while maintaining the search quality.
 
- - [Back to top](#table-of-contents)
+This agent solves the following problems:
+1. The algorithm uses a sliding window algorithm to quickly scan the four directions of the chessboard, reducing the complexity of position evaluation. The action split design independently handles the card-playing and card-selecting stages, avoiding the exponential computational burden of combinatorial decision-making.
+2. Unifies values of two different actions: measure offensive potential through placement value, evaluate defensive benefits through blocking value, remove value for key chips, and calculate strategic advantages for position seizure through replacement value. The center area of ​​the chessboard obtains natural priority through the Gaussian weight formula, and the sequence window to be formed is given an infinite value to ensure instant victory. In view of the trade-off between offensive and defensive actions, the algorithm introduces a dynamic hyperparameter balance formula, combined with the hill climbing method for automatic tuning to maximize the winning rate.
+3. Solved the evaluation problem of intermediate states by using an exponential weighting function.
+4. In the face of the decision complexity caused by high branching factors, it provides prior knowledge for search-based agents, thereby reducing search nodes.
+
+[Back to top](#table-of-contents)
 
 
 ### Trade-offs  
 #### *Advantages*  
-**Powerful search capability:** MCTS can effectively explore complex state Spaces and avoid local optima
-**Anytime algorithm:** It can stop at any time and provide the current best decision
-**Self-improvement:** Automatically enhance the quality of decision-making through more simulations
-**Dealing with uncertainty:** Random simulation is naturally suitable for handling random elements in games
-**Scalability:** It is easy to add new heuristic and optimization techniques
+
+The algorithm achieves real-time decision-making at a very low computational cost. The sliding window mechanism reduces the complexity of position evaluation to a constant level, and can respond in milliseconds even on a large-scale chessboard. The four-dimensional value model (placement/blocking/removal/replacement) accurately quantifies the benefits of attack and defense, and the central Gaussian weight and the final infinite value design strengthen the control of key areas. The action layering process customizes strategies for different card types, combined with the dynamic balance of hyperparameters, to achieve near-optimal single-step decisions without the need for global search, providing an efficient baseline for subsequent adversarial algorithms.
 
 #### *Disadvantages*
-**Computationally intensive:** A large amount of simulation is required to obtain high-quality decisions
-**Memory overhead:** The tree structure and cache system consume a considerable amount of memory
-**Parameter sensitivity:** Parameters such as UCB weight and simulation depth need to be carefully optimized
-**Heuristic dependency:** Performance largely depends on the quality of the heuristic function
-**Time instability:** Suboptimal decisions may be made under time pressure
+
+The fundamental flaw is the lack of long-term planning capability: a single-step greedy strategy cannot foresee the opponent's subsequent actions and is prone to falling into the local optimal trap. Hyperparameters rely on manual tuning and need to be retrained when the environment changes. The rigid rules lead to insufficient adaptability - for example, when faced with unconventional blocking strategies, the four-dimensional model may misjudge asymmetric risks. The unconventional position evaluation of the binocular jack avoids waste of resources, but may ignore opportunities for mixed tactics. Finally, the fixed trigger mechanism of dead card replacement is not flexible enough in complex endgames.
 
 [Back to top](#table-of-contents)
 
 ### Future improvements  
-**1. More intelligent simulation strategies:**
- - Realize the policy network guidance simulation based on neural networks
- - Improve the prediction of opponent behavior in simulation using opponent modeling
-**2. Reinforcement learning Integration:**
- - Train the value network by combining historical game data
- - Realize the adaptive parameter adjustment mechanism
-**3. Parallelization optimization:**
- - Implement multi-threaded MCTS search
- - Use root parallelization to improve search efficiency
-**4. More refined time management:**
- - Dynamically adjust the iterative allocation based on the complexity of the game
- - Realize progressive deepening search
-**5. Advanced Heuristics:**
- - Add pattern recognition capabilities
- - Achieve more complex threat detection and sequence analysis
-**6. Opponent adaptability:**
- - Learn the game style of your opponents
- - Dynamically adjust strategies to counter specific types of opponents
-**7. Incorporate layout strategies for corner positions (not considered yet)**
+
+Fusion of MCTS and Minimax: Grafting lightweight adversarial search on top of the greedy decision layer. When there is enough time, start 3-5 layers of Minimax to predict the opponent's counter-strategy; call MCTS to simulate key branches in complex scenarios to balance real-time performance and long-term planning. Dynamic pruning mechanism prioritizes exploration of high-value action branches to avoid invalid state explosion.
+
+Phased regional value: Replace fixed Gaussian weights and design time-space sensitive functions - strengthen center control in the early stage (number of steps <15), use uniform weights in the middle stage (number of steps 15-30), and activate edge sequence scanning in the endgame (number of steps >30). 
+
+Local update mechanism: Only update the value function near the drop point each time with tracking the 20 windows associated with each position in real time.
 
 [Back to top](#table-of-contents)
