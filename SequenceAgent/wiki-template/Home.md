@@ -3,8 +3,9 @@
 This Wiki can be used as external documentation to the project.
 1. [Home and Introduction](Home.md)
 2. [Problem Analysis](Problem-Analysis.md)
-3. [MCTS Approach](AI-Method-3)
-4. [Conclusions and Reflections](Conclusions-and-Reflections)
+3. [myAgent - Technical Discussion](AI-Method-4)
+4. [Experiments](Experiments)
+5. [Conclusions and Reflections](Conclusions-and-Reflections)
 
 ## Introduction
 
