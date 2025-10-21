@@ -1,0 +1,95 @@
+# Experiments and Analysis
+
+**Here, we will only focus the iterative paths of Agent 1 that attended the competition.**
+
+## Agent 1 (Version 1) - Greedy evaluation
+
+### Demo
+
+![gp3_v_rand](images/gp3_v_rand.jpg)
+
+![gp3_v_rand_b](images/gp3_v_rand_b.png)
+
+#### Results
+
+![gp3_res](images/gp3_res.png)
+
+**1.1 Technical Architecture**
+
+ - The first-generation agent adopted the classic greedy evaluation strategy, which is the most intuitive and easiest to understand method in AI development. The core idea of the agent is to simulate each possible action and then use a relatively simple evaluation function to calculate the value of the action.
+
+ - The algorithm process of this version is straightforward: traverse all possible actions, simulate each action, calculate the score of the simulated situation, and finally select the action with the highest score. The advantage of this method lies in its intuitiveness and simplicity of implementation.
+
+**1.2 Evaluate the philosophy of function design**
+
+ - We decomposed the complexity of the game into two core elements: the control of heart-shaped areas and the potential for sequence construction.
+
+ - The design of the heart-shaped area assessment reflects our understanding of the game rules. We assigned a weight of 30 points to each control position in the heart-shaped area. Although this value selection seems random, it actually reflects an important understanding that heart-shaped victory is a relatively simple and direct way to win and should be given sufficient attention.
+
+ - The sequence evaluation uses the square function, since we believe in most strategy games, the value of a situation close to victory does indeed increase exponentially. The threat level of having four pieces on one line far exceeds the total threat of having one piece on each of the four lines.
+
+**1.3 Technical Advantages and Limitations**
+
+ - The greatest advantage of this version lies in its execution efficiency and conceptual clarity. Agents can make decisions quickly, have a simple code structure, and are relatively easy to debug and maintain.
+
+ - The most important issue is short-sightedness. Agents can only see the situation one step ahead and are unable to conduct in-depth strategic planning. Just like a beginner playing chess who only calculates the immediate gains and losses, while ignoring the possible reactions of the opponent and the long-term strategic layout.
+
+ - Another important limitation is the lack of defensive awareness. Although the evaluation function takes into account the difference in scores with the opponent, this consideration is passive and lacks active blocking and defensive strategies.
+
+---
+
+## Agent 1 (Version 2) - Sliding Window Analysis System
+
+### Demo
+![gpn0_v_gp3](images/gpn0_v_gp3.jpg)
+![gpn0_v_gp3_b](images/gpn0_v_gp3_b.png)
+#### Results
+![gpn0_res](images/gpn0_res.png)
+
+**2.1 Core Transformation of the Technical Architecture**
+The second-generation agent has achieved the core transformation from real-time evaluation to pre-computing architecture. 
+The first generation adopts the O(n²) complexity calculated during decision-making, while the second generation optimizes the decision-making stage to an O(1) table lookup operation through pre-computation. 
+This architectural improvement has significantly enhanced the decision-making efficiency under time constraints.
+**2.2 Modular Architecture of the BoardEvaluator Class**
+The BoardEvaluator class implements the separation of responsibilities for the four core methods. 
+evaluate_locations is responsible for path traversal, evaluate_lines implements sliding window logic, combine_value integrates multi-dimensional evaluation, and evaluate_board provides global analysis. 
+This modular design supports independent unit testing and performance optimization, adhering to the single responsibility principle.
+**2.3 Technical Implementation of the Sliding Window Algorithm**
+The algorithm maintains a sliding window of size 5 in four directions (horizontal, vertical, and two diagonals). 
+The core of the technology is the incremental update mechanism: using deque to maintain position information and using a dictionary to count the number of chess pieces. When the window moves, only the boundary changes are updated, optimizing the traditional complexity of O(5n) to O(n).
+**2.4 Mathematical Model of Four-Dimensional Value Assessment**
+Place the value check window to see if there are any opponent pieces. If not, return the number of your own pieces plus the number of universal cards. 
+Check if there are any pieces of your own team in the interception value check window. If not, return the number of opponent pieces. 
+Removing the value assessment undermines the potential of the opponent's connection, and overwriting the connection opportunities of one's own side placed after the value assessment is removed. 
+This dimensional separation achieves precise modeling of the One-Glance Jack mechanism.
+**2.5 The Mathematical Basis of the Exponential Weight System**
+The exp_weight function converts linear counts into exponential threat assessment. 
+When count=4, return infinity to indicate the victory threat. In other cases, return exp(count) to ensure that the threat value grows exponentially. 
+This solves the problem that linear evaluation cannot distinguish key threats, and the count is limited to within 4 to avoid numerical overflow.
+
+---
+
+## Agent 1 (Version 3) - Fine-grained Parameter Optimization
+
+### Demo
+![gpn0a_v_gpn0](images/gpn0a_v_gpn0.jpg)
+![gpn0a_v_gpn0_b](images/gpn0a_v_gpn0_b.jpg)
+#### Results
+![gpn0a_res](images/gpn0a_res.png)
+
+**3.1 Technical Architecture of Parametric Control System**
+The third generation introduces a two-tier architecture of the parameter definition layer and the parameter application layer. 
+The top defines adjustable parameters such as PLACE_BIAS, REMOVE_BIAS, etc., and the bottom layer applies the parameters in the calculation. 
+This design decouples the algorithm logic from the policy parameters and supports policy experiments without recompilation.
+**3.2 Mathematical Design of the Hybrid Evaluation Function**
+The placement action uses (1 + PLACE_BIAS) * place_val + (1 - PLACE_BIAS) * block_val to balance offense and defense. 
+The removal action uses (1 + REMOVE_BIAS) * remove_val + (1 - REMOVE_BIAS) * override_val to balance destruction and creation. PLACE_REMOVE_SCALE realizes the global weight adjustment of two types of actions through multiplication factors.
+**3.3 Implementation Technology of Lookup Table Algorithm**
+Heart-shaped weights use a dictionary structure, with the keys being (my_count, opponent_count) tuples and the values being weight tuples. 
+O(1) Search time, the memory overhead of 25 entries is extremely small. Support setting precise weights for specific situations. For example, the state (3,0) returns an infinite weight to indicate absolute priority.
+**3.4 Mathematical Implementation of Gaussian Weight Function**
+Calculate the position weights using exp(-smooth * (x-4.5)² + (y-4.5)²). 
+Avoid square root operations to improve efficiency, SMOOTH to control the decay rate, and SCALE to control the numerical range. 
+The input is limited within a reasonable range to ensure numerical stability, and the smoothing feature avoids sudden changes in weights at adjacent positions.
+
+---
