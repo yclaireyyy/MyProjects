@@ -1,5 +1,5 @@
 ================================================================================
-BERT+RAG Fusion Model for Toxic Comment Classification - README
+UGC Toxic Comment Classification - README
 COMP90051 Machine Learning Project
 ================================================================================
 
@@ -200,5 +200,6 @@ VERSION INFORMATION
 Code Version: Final Refactored (October 2025)
 Compatible With: COMP90051 2025-2 Project Requirements
 Tested On: Google Colab (A100 GPU), Python 3.12, PyTorch 2.8
+
 
 Last Updated: October 17 2025
