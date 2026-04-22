@@ -1,4 +1,4 @@
-# UGC Noisy Text Moderation with BERT-RAG
+# Evaluating RAG-Enhanced Transformer Robustness for UGC Toxic Comment Classification Task
 
 **Robust toxic comment classification under noisy text using Logistic Regression, BERT, and retrieval-augmented fusion**
 
