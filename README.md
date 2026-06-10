@@ -1,6 +1,6 @@
 # AI Research Commercialisation Workbench
 
-An AI-native decision-support workflow that helps turn early research signals into structured commercialisation briefs.
+An AI-native decision-support workspace that helps research commercialisation teams turn fragmented research signals into clearer, evidence-aware opportunity decisions.
 
 - Live demo: https://dt-koala-demo.streamlit.app
 - Role: AI Product Manager / AI Product Engineer
