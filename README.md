@@ -1,8 +1,4 @@
-# AI Product Engineering Portfolio
-
-This public repository highlights selected AI product engineering work.
-
-## AI Research Commercialisation Workbench
+# AI Research Commercialisation Workbench
 
 An AI-native decision-support workflow that helps turn early research signals into structured commercialisation briefs.
 
