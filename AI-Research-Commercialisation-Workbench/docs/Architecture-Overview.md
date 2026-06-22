@@ -11,11 +11,10 @@ flowchart TD
     C --> D["Research Agent"]
     C --> E["Market Agent"]
     C --> F["Timing Agent"]
-    C --> G["Feasibility Agent"]
-    D --> H["Synthesis Agent"]
-    E --> H
-    F --> H
-    G --> H
+    D --> G["Feasibility Agent"]
+    E --> G
+    F --> G
+    G --> H["Synthesis Agent"]
     H --> I["Structured Opportunity Brief"]
     I --> J["Workspace refinement"]
     J --> C
