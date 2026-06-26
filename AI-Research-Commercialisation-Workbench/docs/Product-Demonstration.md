@@ -31,6 +31,8 @@ This demonstration shows that the prototype is not only a one-time AI summary to
 **Live demo:**
 [https://dt-koala-demo.streamlit.app](https://dt-koala-demo.streamlit.app)
 
+Access is currently not open to external viewers. The walkthrough below documents the product experience for review.
+
 ---
 
 ## Product Scope Demonstrated
@@ -162,6 +164,16 @@ The second major workflow demonstrated is opportunity discovery.
 The user enters a keyword, topic, or strategic domain. The system then generates a list of recommended opportunities. Each recommendation includes a short title, summary, source context, application angle, evidence basis, and suggested next step.
 
 This workflow is useful when the user does not yet have a specific project in mind and wants to explore possible commercialisation directions.
+
+---
+
+## 1.0 vs 2.0 Scope
+
+The demonstration shows the 1.0 product scope: a working end-to-end workflow for research opportunity input, multi-agent analysis, workspace-based refinement, pre-export review, and PDF export.
+
+The broader 2.0 upgrade is planned across four productization tracks: AI output quality governance, evaluation automation, model/cost governance, and context/memory safety. The current active work is the AI quality layer: making recurring AI risks measurable by turning unsupported claims, overconfident recommendations, context loss, and overly broad brief updates into fixed evaluation scenarios.
+
+These scenarios support automated regression-style evaluation when prompts, agents, model routing, or brief update logic changes. Human review remains the decision checkpoint for high-risk outputs and externally shared Opportunity Briefs.
 
 ---
 

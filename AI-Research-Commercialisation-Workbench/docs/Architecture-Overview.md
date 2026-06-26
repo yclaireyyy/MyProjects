@@ -53,6 +53,14 @@ The Opportunity Brief is the central structured output. It allows users to revie
 
 The Pre-export Quality Check acts as a lightweight decision-readiness review before export. It highlights evidence gaps, weak claims, unresolved validation needs, and overconfident scoring risk so users can understand what is evidence-based, inferred, or still requiring validation.
 
+### 2.0 Productization Roadmap
+
+The broader 2.0 upgrade extends the prototype across four productization tracks: AI output quality governance, evaluation automation, model/cost governance, and context/memory safety. In the current iteration, the active delivery focus is the AI quality layer: making output risks visible, measurable, and easier to review before they affect user decisions.
+
+The quality-layer work turns recurring AI failure modes, such as unsupported claims, overconfident conclusions, context loss, and overly broad brief updates, into fixed evaluation scenarios. These scenarios can then support automated regression-style checks whenever prompts, agent behaviour, model routing, or brief update logic changes.
+
+This layer treats quality, cost, and context consistency as shared product metrics. Model calls are intended to be governed by task purpose and risk level, while human review remains the checkpoint for high-risk decisions and externally shared outputs.
+
 ### PDF Export Flow
 
 After review and refinement, users can export the Opportunity Brief as a shareable PDF.

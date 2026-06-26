@@ -2,7 +2,7 @@
 
 An AI-native decision-support workflow that helps turn early research signals into structured commercialisation briefs.
 
-**Live demo:** https://dt-koala-demo.streamlit.app
+**Live demo:** https://dt-koala-demo.streamlit.app (access is currently not open to external viewers; please refer to the documentation below for a walkthrough)
 **Role:** AI Product Manager / AI Product Engineer
 **Status:** Working prototype / public showcase
 
@@ -29,6 +29,14 @@ The product is designed for scenarios where research information is fragmented, 
 - Contributed to product architecture and user journey design across input, analysis, refinement, quality review, and export.
 - Designed and implemented the Pre-export Quality Check.
 - Improved key workspace UI flows, including structured brief display, follow-up controls, agent-source transparency, brief update feedback, and final review placement.
+
+## Current Upgrade Direction
+
+The working prototype represents the 1.0 product scope: an end-to-end workflow for moving from a research idea or discovery lead to a structured Opportunity Brief, refining it in a workspace, reviewing evidence gaps, and exporting the result.
+
+The broader 2.0 upgrade is a productization roadmap across four areas: AI output quality governance, evaluation automation, model/cost governance, and context/memory safety. The current active work is the AI quality layer: turning recurring AI risks, such as unsupported claims, overconfident recommendations, context loss, and overly broad brief updates, into fixed evaluation scenarios that can be rerun as the product evolves.
+
+This direction connects quality, cost, and context consistency as shared iteration metrics. Human review remains the decision checkpoint for high-risk outputs and external-facing briefs.
 
 ## Product Flow
 
